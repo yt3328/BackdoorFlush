@@ -303,6 +303,12 @@ Resources:
             ApiId: !Ref PokerFeltScopeApi
             Path: /api/health
             Method: GET
+        OptionsProxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PokerFeltScopeApi
+            Path: /api/{proxy+}
+            Method: OPTIONS
         ApiProxy:
           Type: HttpApi
           Properties:
