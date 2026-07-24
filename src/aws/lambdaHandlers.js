@@ -1,44 +1,221 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { calculateEquity } from "../core/equity.js";
 import { parseHandHistory } from "../core/handParser.js";
 import { detectLeaks, summarizeHands } from "../core/stats.js";
+import { createCloudHandStore } from "./cloudStore.js";
+import {
+  eventBody,
+  handleError,
+  httpMethod,
+  httpPath,
+  jsonResponse,
+  queryValue,
+  userIdFromEvent
+} from "./http.js";
 
-function response(statusCode, body) {
-  return {
-    statusCode,
-    headers: {
-      "content-type": "application/json"
-    },
-    body: JSON.stringify(body)
-  };
+const samplePath = fileURLToPath(new URL("../../samples/pokerstars-small.txt", import.meta.url));
+
+function parseLimit(value) {
+  const limit = Number.parseInt(value ?? "100", 10);
+  return Math.max(1, Math.min(500, Number.isFinite(limit) ? limit : 100));
 }
 
-function body(event) {
-  return event.body ? JSON.parse(event.body) : {};
+function importIdFromPath(pathname) {
+  const match = pathname.match(/^\/api\/imports\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function handIdFromPath(pathname) {
+  const match = pathname.match(/^\/api\/hands\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+async function createImportFromText({ store, payload }) {
+  const result = await store.createQueuedImport({
+    name: payload.name,
+    source: payload.source,
+    rawText: payload.rawText
+  });
+
+  return jsonResponse(result.duplicate ? 200 : 202, {
+    import: result.import,
+    handPreview: result.hands.slice(0, 3),
+    duplicate: Boolean(result.duplicate),
+    skippedCount: result.skippedCount ?? 0
+  });
 }
 
 export async function parseImport(event) {
-  const payload = body(event);
+  const payload = eventBody(event);
   const hands = parseHandHistory(payload.rawText);
 
-  return response(200, {
+  return jsonResponse(200, {
     handCount: hands.length,
     hands
   });
 }
 
 export async function equity(event) {
-  return response(200, {
-    result: calculateEquity(body(event))
+  return jsonResponse(200, {
+    result: calculateEquity(eventBody(event))
   });
 }
 
 export async function leaks(event) {
-  const payload = body(event);
+  const payload = eventBody(event);
   const summary = summarizeHands(payload.hands ?? [], payload.player);
 
-  return response(200, {
+  return jsonResponse(200, {
     players: summary,
     leaks: detectLeaks(summary)
   });
+}
+
+export async function api(event) {
+  try {
+    const method = httpMethod(event);
+    const pathname = httpPath(event);
+
+    if (method === "OPTIONS") {
+      return jsonResponse(204, {});
+    }
+
+    if (pathname === "/api/health" && method === "GET") {
+      return jsonResponse(200, {
+        status: "ok",
+        service: "poker-felt-scope",
+        runtime: "aws-lambda",
+        generatedAt: new Date().toISOString()
+      });
+    }
+
+    const store = await createCloudHandStore({
+      userId: userIdFromEvent(event)
+    });
+
+    if (pathname === "/api/imports" && method === "GET") {
+      return jsonResponse(200, {
+        imports: await store.listImports()
+      });
+    }
+
+    if (pathname === "/api/imports" && method === "POST") {
+      return createImportFromText({
+        store,
+        payload: eventBody(event)
+      });
+    }
+
+    const importId = importIdFromPath(pathname);
+    if (importId && method === "DELETE") {
+      return jsonResponse(200, await store.deleteImport(importId));
+    }
+
+    if (pathname === "/api/demo" && method === "POST") {
+      return createImportFromText({
+        store,
+        payload: {
+          name: "Small table sample",
+          source: "sample",
+          rawText: readFileSync(samplePath, "utf8")
+        }
+      });
+    }
+
+    if (pathname === "/api/hands" && method === "GET") {
+      return jsonResponse(200, {
+        hands: await store.listHands({
+          limit: parseLimit(queryValue(event, "limit")),
+          player: queryValue(event, "player"),
+          position: queryValue(event, "position")
+        })
+      });
+    }
+
+    const handId = handIdFromPath(pathname);
+    if (handId && method === "GET") {
+      const hand = await store.getHand(handId);
+
+      if (!hand) {
+        return jsonResponse(404, {
+          error: {
+            message: "Hand not found."
+          }
+        });
+      }
+
+      return jsonResponse(200, { hand });
+    }
+
+    if (pathname === "/api/stats/summary" && method === "GET") {
+      return jsonResponse(200, {
+        players: summarizeHands(
+          await store.listHands({ limit: 500 }),
+          queryValue(event, "player")
+        )
+      });
+    }
+
+    if (pathname === "/api/leaks" && method === "GET") {
+      const summary = summarizeHands(
+        await store.listHands({ limit: 500 }),
+        queryValue(event, "player")
+      );
+
+      return jsonResponse(200, {
+        leaks: detectLeaks(summary)
+      });
+    }
+
+    if (pathname === "/api/session" && method === "DELETE") {
+      return jsonResponse(200, await store.clear());
+    }
+
+    if (pathname === "/api/equity/calculate" && method === "POST") {
+      return equity(event);
+    }
+
+    return jsonResponse(404, {
+      error: {
+        message: "Endpoint not found."
+      }
+    });
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+export async function processParseQueue(event) {
+  const results = [];
+
+  for (const record of event.Records ?? []) {
+    const message = JSON.parse(record.body);
+    const store = await createCloudHandStore({
+      userId: message.userId
+    });
+
+    try {
+      const rawText = await store.readRawImport(message.rawKey);
+      const hands = parseHandHistory(rawText);
+      const result = await store.saveParsedImport({
+        importId: message.importId,
+        rawText,
+        hands
+      });
+      results.push({
+        importId: message.importId,
+        status: "ready",
+        handCount: result.handCount
+      });
+    } catch (error) {
+      await store.markImportFailed(message.importId, error.message);
+      throw error;
+    }
+  }
+
+  return {
+    results
+  };
 }
 

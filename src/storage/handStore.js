@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { mkdirSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { handKey, hashText } from "../core/importIdentity.js";
 
 function emptyState() {
   return {
@@ -12,23 +12,6 @@ function emptyState() {
 
 function createId(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
-}
-
-function hashText(value) {
-  return createHash("sha256")
-    .update(String(value ?? "").replaceAll("\r\n", "\n").trim())
-    .digest("hex");
-}
-
-function handKey(hand) {
-  const playerNames = hand.players.map((player) => player.name).sort().join("|");
-  return [
-    hand.handNumber,
-    hand.tableName ?? "",
-    hand.hero ?? "",
-    hand.board.join(" "),
-    playerNames
-  ].join("::");
 }
 
 export class HandStore {

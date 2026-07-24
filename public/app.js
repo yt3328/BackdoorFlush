@@ -17,6 +17,8 @@ const state = {
   selectedHandId: null
 };
 
+const apiBase = window.POKER_FELT_SCOPE_API_BASE ?? "";
+
 const elements = {
   title: document.querySelector("#page-title"),
   navButtons: [...document.querySelectorAll(".nav-button")],
@@ -49,7 +51,7 @@ const elements = {
 };
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
+  const response = await fetch(`${apiBase}${path}`, {
     headers: {
       "content-type": "application/json"
     },

@@ -2,7 +2,9 @@
 
 PokerFeltScope is a small hand-history desk for reviewing poker sessions.
 
-The current version keeps things local: upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, and run quick equity checks. The AWS folder sketches the pieces needed when the parser moves from a local app into an upload-and-process pipeline.
+The local app lets you upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, and run quick equity checks.
+
+Version 0.3 also adds the AWS backend shape: API Gateway, Lambda, S3 raw uploads, SQS parse jobs, DynamoDB storage, and CloudWatch alarms through an AWS SAM template.
 
 ## Run it
 
@@ -21,6 +23,8 @@ The local app stores state in `data/poker-felt-scope.json`. You can clear the se
 
 ## What works
 
+Local mode:
+
 - Imports PokerStars-style text hand histories from a file picker or pasted text.
 - Skips duplicate uploads and overlapping hands.
 - Stores parsed hands in a local JSON store.
@@ -30,6 +34,14 @@ The local app stores state in `data/poker-felt-scope.json`. You can clear the se
 - Flags a few basic review signals from the current sample.
 - Runs a Monte Carlo equity check for 2-card Hold'em hands.
 - Serves a small dashboard and REST API from one Node process.
+
+AWS mode:
+
+- Queues uploaded hand histories through an API Lambda.
+- Stores raw text in S3.
+- Parses uploads asynchronously from SQS.
+- Writes imports and parsed hands to DynamoDB.
+- Exposes the same core stats/equity behavior through Lambda handlers.
 
 ## API
 
@@ -62,14 +74,16 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 - `src/core/equity.js` runs the Hold'em equity calculator.
 - `src/http/apiServer.js` exposes the local API and serves the dashboard.
 - `src/storage/handStore.js` keeps local state.
-- `src/aws/lambdaHandlers.js` has small Lambda-ready handlers for the core functions.
-- `infra/template.yaml` is the AWS SAM starting point.
+- `src/aws/` contains Lambda handlers and AWS data adapters.
+- `infra/template.yaml` is the AWS SAM backend template.
 - `samples/` has a small hand-history file for local testing.
+- `docs/aws-setup.md` covers safe account setup.
+- `docs/deployment.md` covers SAM build/deploy steps.
 
 ## Next
 
+- Add Cognito login so users have private cloud data.
+- Host the frontend as a real public website.
 - Support more hand-history formats and larger real-world exports.
-- Store uploads in S3 and parsed hands in DynamoDB.
-- Move parsing into an SQS-backed worker.
 - Add bankroll tracking and richer session-level graphs.
 - Replace the first-pass review rules with a larger recommendation engine.

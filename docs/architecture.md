@@ -26,10 +26,11 @@ flowchart LR
 
 - S3 stores raw hand-history uploads.
 - API Gateway fronts the public API.
-- Cognito protects user-owned data.
 - Lambda handles imports, reads, stats, and equity checks.
 - SQS buffers parse jobs so large uploads do not block requests.
 - DynamoDB stores parsed hand records keyed by user/session.
+- CloudWatch alarms track API and parse worker errors.
+- Cognito can be added later for user-owned data.
 - SageMaker can be added later for recommendation or clustering work.
 
 ## Data Shape
@@ -50,3 +51,6 @@ Parsed hands should eventually include:
 - `winnings`
 - `createdAt`
 
+## Version 0.3 Boundaries
+
+The cloud backend is designed to be deployed with SAM, but the browser dashboard still runs locally by default. To point the local frontend at a deployed backend, set `public/config.js` to the API Gateway output URL.

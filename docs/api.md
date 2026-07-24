@@ -32,6 +32,8 @@ The response includes the import record and a small hand preview.
 
 Exact duplicate uploads return the existing import with `duplicate: true`. Overlapping hands are skipped when their hand keys already exist.
 
+In AWS mode, `POST /api/imports` returns `202` for a new upload because parsing happens asynchronously through SQS. Poll `GET /api/imports` until the import status becomes `ready` or `failed`.
+
 ## Demo
 
 ```http

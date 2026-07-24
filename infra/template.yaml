@@ -1,19 +1,39 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: PokerFeltScope API skeleton
+Description: PokerFeltScope AWS backend
+
+Parameters:
+  StageName:
+    Type: String
+    Default: dev
+  AllowedOrigin:
+    Type: String
+    Default: "*"
+  DefaultUserId:
+    Type: String
+    Default: local-dev-user
 
 Globals:
   Function:
     Runtime: nodejs20.x
-    Timeout: 12
-    MemorySize: 256
+    Timeout: 15
+    MemorySize: 512
     Architectures:
       - arm64
+    Environment:
+      Variables:
+        ALLOWED_ORIGIN: !Ref AllowedOrigin
+        DEFAULT_USER_ID: !Ref DefaultUserId
+        IMPORTS_TABLE_NAME: !Ref ImportsTable
+        HANDS_TABLE_NAME: !Ref HandsTable
+        RAW_UPLOADS_BUCKET: !Ref RawUploadsBucket
+        PARSE_QUEUE_URL: !Ref ParseQueue
 
 Resources:
   PokerFeltScopeApi:
     Type: AWS::Serverless::HttpApi
     Properties:
+      StageName: !Ref StageName
       CorsConfiguration:
         AllowHeaders:
           - content-type
@@ -21,23 +41,69 @@ Resources:
         AllowMethods:
           - GET
           - POST
+          - DELETE
           - OPTIONS
         AllowOrigins:
-          - "*"
+          - !Ref AllowedOrigin
 
   RawUploadsBucket:
     Type: AWS::S3::Bucket
     Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireRawUploadsAfter90Days
+            Status: Enabled
+            ExpirationInDays: 90
+
+  ParseDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
 
   ParseQueue:
     Type: AWS::SQS::Queue
     Properties:
-      VisibilityTimeout: 60
+      VisibilityTimeout: 90
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ParseDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  ImportsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: importId
+          AttributeType: S
+        - AttributeName: rawHash
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: importId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: RawHashIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: rawHash
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
 
   HandsTable:
     Type: AWS::DynamoDB::Table
@@ -48,52 +114,114 @@ Resources:
           AttributeType: S
         - AttributeName: handId
           AttributeType: S
+        - AttributeName: importId
+          AttributeType: S
       KeySchema:
         - AttributeName: userId
           KeyType: HASH
         - AttributeName: handId
           KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: UserImportIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: importId
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
 
-  ParseImportFunction:
+  ApiFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ..
-      Handler: src/aws/lambdaHandlers.parseImport
+      Handler: src/aws/lambdaHandlers.api
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ImportsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref HandsTable
+        - S3CrudPolicy:
+            BucketName: !Ref RawUploadsBucket
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt ParseQueue.QueueName
       Events:
-        ParseImport:
+        ApiProxy:
           Type: HttpApi
           Properties:
             ApiId: !Ref PokerFeltScopeApi
-            Path: /api/imports/parse
-            Method: POST
+            Path: /api/{proxy+}
+            Method: ANY
 
-  EquityFunction:
+  ParseWorkerFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ..
-      Handler: src/aws/lambdaHandlers.equity
+      Handler: src/aws/lambdaHandlers.processParseQueue
+      Timeout: 60
+      MemorySize: 1024
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ImportsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref HandsTable
+        - S3ReadPolicy:
+            BucketName: !Ref RawUploadsBucket
       Events:
-        Equity:
-          Type: HttpApi
+        ParseQueueEvent:
+          Type: SQS
           Properties:
-            ApiId: !Ref PokerFeltScopeApi
-            Path: /api/equity/calculate
-            Method: POST
+            Queue: !GetAtt ParseQueue.Arn
+            BatchSize: 5
 
-  LeaksFunction:
-    Type: AWS::Serverless::Function
+  ApiFunctionErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
     Properties:
-      CodeUri: ..
-      Handler: src/aws/lambdaHandlers.leaks
-      Events:
-        Leaks:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref PokerFeltScopeApi
-            Path: /api/leaks
-            Method: POST
+      AlarmDescription: PokerFeltScope API Lambda errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ApiFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  ParseWorkerErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: PokerFeltScope parse worker errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ParseWorkerFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
 
 Outputs:
   ApiUrl:
     Description: HTTP API endpoint
-    Value: !Sub "https://${PokerFeltScopeApi}.execute-api.${AWS::Region}.amazonaws.com"
+    Value: !Sub "https://${PokerFeltScopeApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
+  RawUploadsBucketName:
+    Description: S3 bucket for raw hand-history uploads
+    Value: !Ref RawUploadsBucket
+  ImportsTableName:
+    Description: DynamoDB imports table
+    Value: !Ref ImportsTable
+  HandsTableName:
+    Description: DynamoDB hands table
+    Value: !Ref HandsTable
+  ParseQueueUrl:
+    Description: SQS queue for parsing jobs
+    Value: !Ref ParseQueue
+

@@ -1,0 +1,2 @@
+window.POKER_FELT_SCOPE_API_BASE = "";
+
