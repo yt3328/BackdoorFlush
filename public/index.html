@@ -48,6 +48,7 @@
           </div>
           <div class="toolbar">
             <button id="load-demo" class="button secondary" type="button">Load Sample</button>
+            <button id="clear-session" class="button ghost" type="button">Clear Session</button>
             <button id="refresh" class="button" type="button">Refresh</button>
           </div>
         </header>
@@ -70,6 +71,22 @@
               <span class="metric-label">Signals</span>
               <strong id="metric-leaks">0</strong>
             </article>
+          </div>
+
+          <div class="split chart-row">
+            <section class="panel">
+              <div class="panel-head">
+                <h3>Position Mix</h3>
+              </div>
+              <div id="position-chart" class="chart-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h3>Import Volume</h3>
+              </div>
+              <div id="import-chart" class="chart-list"></div>
+            </section>
           </div>
 
           <div class="split">
@@ -107,13 +124,22 @@
         </section>
 
         <section class="view" id="view-hands">
-          <section class="panel">
-            <div class="panel-head">
-              <h3>Recent Hands</h3>
-              <input id="hand-player-filter" type="search" placeholder="Filter by player">
-            </div>
-            <div id="hand-list" class="hand-list"></div>
-          </section>
+          <div class="split hands-workspace">
+            <section class="panel">
+              <div class="panel-head">
+                <h3>Recent Hands</h3>
+                <input id="hand-player-filter" type="search" placeholder="Filter by player">
+              </div>
+              <div id="hand-list" class="hand-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h3>Hand Detail</h3>
+              </div>
+              <div id="hand-detail" class="hand-detail"></div>
+            </section>
+          </div>
         </section>
 
         <section class="view" id="view-equity">
@@ -162,6 +188,10 @@
               </div>
               <form id="import-form" class="form">
                 <label>
+                  File
+                  <input id="history-file" name="historyFile" type="file" accept=".txt,.log,.hh,text/plain">
+                </label>
+                <label>
                   Name
                   <input name="name" value="Local session">
                 </label>
@@ -173,7 +203,10 @@
                   Hand history text
                   <textarea name="rawText" rows="14"></textarea>
                 </label>
-                <button class="button" type="submit">Import</button>
+                <div class="form-actions">
+                  <button class="button" type="submit">Import</button>
+                  <button id="clear-import-text" class="button secondary" type="button">Clear Text</button>
+                </div>
               </form>
             </section>
             <section class="panel">

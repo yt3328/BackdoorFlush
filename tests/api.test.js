@@ -67,6 +67,58 @@ test("demo endpoint loads sample hands", async () => {
   assert.equal(payload.import.handCount, 5);
 });
 
+test("demo endpoint skips an already imported sample", async () => {
+  await dispatch({ method: "POST", url: "/api/demo" });
+  const duplicateResponse = await dispatch({ method: "POST", url: "/api/demo" });
+  const duplicatePayload = await duplicateResponse.json();
+  const handsResponse = await dispatch({ url: "/api/hands" });
+  const handsPayload = await handsResponse.json();
+
+  assert.equal(duplicateResponse.status, 200);
+  assert.equal(duplicatePayload.duplicate, true);
+  assert.equal(duplicatePayload.skippedCount, 5);
+  assert.equal(handsPayload.hands.length, 5);
+});
+
+test("returns one parsed hand by id", async () => {
+  await dispatch({ method: "POST", url: "/api/demo" });
+  const handsResponse = await dispatch({ url: "/api/hands?limit=1" });
+  const handsPayload = await handsResponse.json();
+  const response = await dispatch({ url: `/api/hands/${handsPayload.hands[0].id}` });
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.hand.id, handsPayload.hands[0].id);
+});
+
+test("deletes an import and its hands", async () => {
+  const importResponse = await dispatch({ method: "POST", url: "/api/demo" });
+  const importPayload = await importResponse.json();
+  const deleteResponse = await dispatch({
+    method: "DELETE",
+    url: `/api/imports/${importPayload.import.id}`
+  });
+  const deletePayload = await deleteResponse.json();
+  const handsResponse = await dispatch({ url: "/api/hands" });
+  const handsPayload = await handsResponse.json();
+
+  assert.equal(deleteResponse.status, 200);
+  assert.equal(deletePayload.removedHands, 5);
+  assert.equal(handsPayload.hands.length, 0);
+});
+
+test("clears local session state", async () => {
+  await dispatch({ method: "POST", url: "/api/demo" });
+  const clearResponse = await dispatch({ method: "DELETE", url: "/api/session" });
+  const clearPayload = await clearResponse.json();
+  const importsResponse = await dispatch({ url: "/api/imports" });
+  const importsPayload = await importsResponse.json();
+
+  assert.equal(clearResponse.status, 200);
+  assert.equal(clearPayload.removedHands, 5);
+  assert.equal(importsPayload.imports.length, 0);
+});
+
 test("summary endpoint returns players after import", async () => {
   await dispatch({ method: "POST", url: "/api/demo" });
 
@@ -94,4 +146,3 @@ test("equity endpoint returns a result", async () => {
   assert.equal(response.status, 200);
   assert.ok(payload.result.equityPct >= 0);
 });
-

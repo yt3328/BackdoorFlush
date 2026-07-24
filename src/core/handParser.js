@@ -1,9 +1,10 @@
-const seatPattern = /^Seat\s+(\d+):\s+(.+?)\s+\(([-\d.]+)\s+in chips\)/;
+const amountPattern = "[-$€£,\\d.]+";
+const seatPattern = new RegExp(`^Seat\\s+(\\d+):\\s+(.+?)\\s+\\((${amountPattern})\\s+in chips\\)`);
 const dealtPattern = /^Dealt to (.+?) \[([2-9TJQKA][cdhs]) ([2-9TJQKA][cdhs])\]/;
-const actionPattern = /^(.+?):\s+(folds|checks|calls|bets|raises)(?:\s+([-\d.]+))?(?:\s+to\s+([-\d.]+))?/;
+const actionPattern = new RegExp(`^(.+?):\\s+(folds|checks|calls|bets|raises)(?:\\s+(${amountPattern}))?(?:\\s+to\\s+(${amountPattern}))?`);
 const streetPattern = /^\*\*\* (HOLE CARDS|FLOP|TURN|RIVER|SHOW DOWN|SUMMARY) \*\*\*/;
 const boardPattern = /^\*\*\* (FLOP|TURN|RIVER) \*\*\* \[(.+?)\](?: \[(.+?)\])?/;
-const collectedPattern = /^(.+?) collected ([-\d.]+) from pot/;
+const collectedPattern = new RegExp(`^(.+?) collected (${amountPattern}) from pot`);
 
 const positionsBySeatCount = {
   2: ["SB", "BB"],
@@ -21,7 +22,7 @@ function parseAmount(value) {
     return null;
   }
 
-  const parsed = Number.parseFloat(value);
+  const parsed = Number.parseFloat(String(value).replace(/[^-\d.]/g, ""));
   return Number.isFinite(parsed) ? parsed : null;
 }
 

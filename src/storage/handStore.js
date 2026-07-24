@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { mkdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 
 function emptyState() {
   return {
@@ -11,6 +12,23 @@ function emptyState() {
 
 function createId(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function hashText(value) {
+  return createHash("sha256")
+    .update(String(value ?? "").replaceAll("\r\n", "\n").trim())
+    .digest("hex");
+}
+
+function handKey(hand) {
+  const playerNames = hand.players.map((player) => player.name).sort().join("|");
+  return [
+    hand.handNumber,
+    hand.tableName ?? "",
+    hand.hero ?? "",
+    hand.board.join(" "),
+    playerNames
+  ].join("::");
 }
 
 export class HandStore {
@@ -24,7 +42,14 @@ export class HandStore {
       return emptyState();
     }
 
-    return JSON.parse(readFileSync(this.persistencePath, "utf8"));
+    const state = JSON.parse(readFileSync(this.persistencePath, "utf8"));
+    return {
+      imports: Array.isArray(state.imports) ? state.imports : [],
+      hands: Array.isArray(state.hands) ? state.hands.map((hand) => ({
+        ...hand,
+        handKey: hand.handKey ?? handKey(hand)
+      })) : []
+    };
   }
 
   save() {
@@ -37,17 +62,55 @@ export class HandStore {
   }
 
   addImport({ name, source, rawText, hands }) {
+    const rawHash = hashText(rawText);
+    const existingImport = this.state.imports.find((record) => record.rawHash === rawHash);
+
+    if (existingImport) {
+      return {
+        import: existingImport,
+        hands: this.state.hands.filter((hand) => hand.importId === existingImport.id),
+        duplicate: true,
+        skippedCount: hands.length
+      };
+    }
+
     const importedAt = new Date().toISOString();
+    const existingHandKeys = new Set(this.state.hands.map((hand) => hand.handKey ?? handKey(hand)));
+    const newHands = hands
+      .map((hand) => ({
+        ...hand,
+        handKey: handKey(hand)
+      }))
+      .filter((hand) => !existingHandKeys.has(hand.handKey));
+
+    if (newHands.length === 0) {
+      const incomingKeys = new Set(hands.map(handKey));
+      const matchingHand = this.state.hands.find((hand) => incomingKeys.has(hand.handKey ?? handKey(hand)));
+      const matchingImport = this.state.imports.find((record) => record.id === matchingHand?.importId);
+
+      if (matchingImport) {
+        return {
+          import: matchingImport,
+          hands: this.state.hands.filter((hand) => hand.importId === matchingImport.id),
+          duplicate: true,
+          skippedCount: hands.length
+        };
+      }
+    }
+
     const importRecord = {
       id: createId("imp"),
       name: name || `Import ${this.state.imports.length + 1}`,
       source: source || "manual-upload",
-      handCount: hands.length,
+      handCount: newHands.length,
+      parsedHandCount: hands.length,
+      skippedCount: hands.length - newHands.length,
       rawBytes: Buffer.byteLength(rawText, "utf8"),
+      rawHash,
       importedAt
     };
 
-    const storedHands = hands.map((hand) => ({
+    const storedHands = newHands.map((hand) => ({
       ...hand,
       id: createId("hand"),
       importId: importRecord.id,
@@ -85,9 +148,37 @@ export class HandStore {
     return hands.slice(0, limit);
   }
 
+  getHand(id) {
+    return this.state.hands.find((hand) => hand.id === id) ?? null;
+  }
+
+  deleteImport(id) {
+    const existingImport = this.state.imports.find((record) => record.id === id);
+
+    if (!existingImport) {
+      throw new Error("Import not found.");
+    }
+
+    const beforeCount = this.state.hands.length;
+    this.state.imports = this.state.imports.filter((record) => record.id !== id);
+    this.state.hands = this.state.hands.filter((hand) => hand.importId !== id);
+    this.save();
+
+    return {
+      import: existingImport,
+      removedHands: beforeCount - this.state.hands.length
+    };
+  }
+
   clear() {
+    const removedImports = this.state.imports.length;
+    const removedHands = this.state.hands.length;
     this.state = emptyState();
     this.save();
+
+    return {
+      removedImports,
+      removedHands
+    };
   }
 }
-

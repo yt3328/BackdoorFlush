@@ -19,3 +19,27 @@ test("rejects empty input", () => {
   assert.throws(() => parseHandHistory(""), /rawText is required/);
 });
 
+test("parses currency amounts in hand histories", () => {
+  const [hand] = parseHandHistory(`
+PokerStars Hand #999: Hold'em No Limit ($0.05/$0.10 USD) - 2026/07/20 20:14:21 ET
+Table 'Currency' 2-max Seat #1 is the button
+Seat 1: Hero ($10.00 in chips)
+Seat 2: Villain ($9.50 in chips)
+*** HOLE CARDS ***
+Dealt to Hero [Ac Ad]
+Hero: raises $0.20 to $0.30
+Villain: calls $0.20
+*** FLOP *** [As 7d 2c]
+Villain: checks
+Hero: bets $0.45
+Villain: folds
+Hero collected $0.60 from pot
+*** SUMMARY ***
+Total pot $0.60
+`);
+
+  assert.equal(hand.players[0].stack, 10);
+  assert.equal(hand.actions[0].amount, 0.3);
+  assert.equal(hand.actions[3].amount, 0.45);
+  assert.equal(hand.winnings.Hero, 0.6);
+});

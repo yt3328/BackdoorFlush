@@ -1,9 +1,20 @@
+const positionOrder = ["BTN", "CO", "HJ", "LJ", "MP", "UTG+1", "UTG", "SB", "BB", "Unknown"];
+const streetOrder = ["hole-cards", "flop", "turn", "river", "show-down"];
+const streetLabels = {
+  "hole-cards": "Preflop",
+  flop: "Flop",
+  turn: "Turn",
+  river: "River",
+  "show-down": "Showdown"
+};
+
 const state = {
   view: "overview",
   hands: [],
   imports: [],
   players: [],
-  leaks: []
+  leaks: [],
+  selectedHandId: null
 };
 
 const elements = {
@@ -11,14 +22,20 @@ const elements = {
   navButtons: [...document.querySelectorAll(".nav-button")],
   views: [...document.querySelectorAll(".view")],
   loadDemo: document.querySelector("#load-demo"),
+  clearSession: document.querySelector("#clear-session"),
   refresh: document.querySelector("#refresh"),
   playerFilter: document.querySelector("#player-filter"),
   handPlayerFilter: document.querySelector("#hand-player-filter"),
   playerStats: document.querySelector("#player-stats"),
   leakList: document.querySelector("#leak-list"),
+  positionChart: document.querySelector("#position-chart"),
+  importChart: document.querySelector("#import-chart"),
   handList: document.querySelector("#hand-list"),
+  handDetail: document.querySelector("#hand-detail"),
   importList: document.querySelector("#import-list"),
   importForm: document.querySelector("#import-form"),
+  historyFile: document.querySelector("#history-file"),
+  clearImportText: document.querySelector("#clear-import-text"),
   equityForm: document.querySelector("#equity-form"),
   equityResult: document.querySelector("#equity-result"),
   toast: document.querySelector("#toast"),
@@ -52,7 +69,7 @@ async function api(path, options = {}) {
 function showToast(message) {
   elements.toast.textContent = message;
   elements.toast.classList.add("show");
-  window.setTimeout(() => elements.toast.classList.remove("show"), 2400);
+  window.setTimeout(() => elements.toast.classList.remove("show"), 2600);
 }
 
 function escapeHtml(value) {
@@ -89,6 +106,14 @@ function renderCards(cards) {
   return `<div class="cards">${cards.map((card) => `<span class="${cardClass(card)}">${escapeHtml(card)}</span>`).join("")}</div>`;
 }
 
+function formatAmount(amount) {
+  return amount === null || amount === undefined ? "" : ` ${Number(amount).toFixed(2)}`;
+}
+
+function formatAction(action) {
+  return `${escapeHtml(action.player)} ${escapeHtml(action.type)}${formatAmount(action.amount)}`;
+}
+
 function renderMetrics() {
   const handCount = state.hands.length;
   const avgVpip =
@@ -109,14 +134,18 @@ function renderPlayerOptions() {
     '<option value="">All players</option>',
     ...state.players.map((player) => `<option value="${escapeHtml(player.player)}">${escapeHtml(player.player)}</option>`)
   ].join("");
-  elements.playerFilter.value = previous;
+  elements.playerFilter.value = state.players.some((player) => player.player === previous) ? previous : "";
+}
+
+function selectedPlayers() {
+  const filteredPlayer = elements.playerFilter.value;
+  return filteredPlayer
+    ? state.players.filter((player) => player.player === filteredPlayer)
+    : state.players;
 }
 
 function renderPlayerStats() {
-  const filteredPlayer = elements.playerFilter.value;
-  const players = filteredPlayer
-    ? state.players.filter((player) => player.player === filteredPlayer)
-    : state.players;
+  const players = selectedPlayers();
 
   elements.playerStats.innerHTML = players
     .map(
@@ -136,6 +165,85 @@ function renderPlayerStats() {
   if (players.length === 0) {
     elements.playerStats.innerHTML = '<tr><td colspan="6">No hands loaded yet.</td></tr>';
   }
+}
+
+function positionRows() {
+  const totals = new Map();
+
+  for (const player of selectedPlayers()) {
+    for (const [position, values] of Object.entries(player.byPosition)) {
+      const current = totals.get(position) ?? { hands: 0, vpip: 0, pfr: 0 };
+      current.hands += values.hands;
+      current.vpip += values.vpip;
+      current.pfr += values.pfr;
+      totals.set(position, current);
+    }
+  }
+
+  return [...totals.entries()]
+    .map(([position, values]) => ({
+      position,
+      hands: values.hands,
+      vpipPct: values.hands === 0 ? 0 : Number(((values.vpip / values.hands) * 100).toFixed(1)),
+      pfrPct: values.hands === 0 ? 0 : Number(((values.pfr / values.hands) * 100).toFixed(1))
+    }))
+    .sort((a, b) => {
+      const aIndex = positionOrder.includes(a.position) ? positionOrder.indexOf(a.position) : positionOrder.length;
+      const bIndex = positionOrder.includes(b.position) ? positionOrder.indexOf(b.position) : positionOrder.length;
+      return aIndex - bIndex;
+    });
+}
+
+function renderCharts() {
+  const positions = positionRows();
+
+  if (positions.length === 0) {
+    elements.positionChart.innerHTML = '<div class="empty">Load hands to see position patterns.</div>';
+  } else {
+    elements.positionChart.innerHTML = positions
+      .map(
+        (row) => `
+          <div class="chart-row-item">
+            <div class="chart-label">
+              <strong>${escapeHtml(row.position)}</strong>
+              <span>${row.hands} hands</span>
+            </div>
+            <div class="bar-pair">
+              <span class="bar vpip" style="width: ${row.vpipPct}%"></span>
+              <span class="bar pfr" style="width: ${row.pfrPct}%"></span>
+            </div>
+            <div class="chart-values">VPIP ${row.vpipPct}% / PFR ${row.pfrPct}%</div>
+          </div>
+        `
+      )
+      .join("");
+  }
+
+  const imports = [...state.imports].reverse();
+  const maxHands = Math.max(1, ...imports.map((item) => item.handCount));
+
+  if (imports.length === 0) {
+    elements.importChart.innerHTML = '<div class="empty">No imports yet.</div>';
+    return;
+  }
+
+  elements.importChart.innerHTML = imports
+    .map((item) => {
+      const width = Math.max(6, (item.handCount / maxHands) * 100);
+      return `
+        <div class="chart-row-item compact">
+          <div class="chart-label">
+            <strong>${escapeHtml(item.name)}</strong>
+            <span>${new Date(item.importedAt).toLocaleDateString()}</span>
+          </div>
+          <div class="single-bar">
+            <span style="width: ${width}%"></span>
+          </div>
+          <div class="chart-values">${item.handCount} new / ${item.skippedCount ?? 0} skipped</div>
+        </div>
+      `;
+    })
+    .join("");
 }
 
 function renderLeaks() {
@@ -159,11 +267,15 @@ function renderLeaks() {
     .join("");
 }
 
-function renderHands() {
-  const filter = elements.handPlayerFilter.value.trim();
-  const hands = filter
-    ? state.hands.filter((hand) => hand.players.some((player) => player.name.toLowerCase().includes(filter.toLowerCase())))
+function filteredHands() {
+  const filter = elements.handPlayerFilter.value.trim().toLowerCase();
+  return filter
+    ? state.hands.filter((hand) => hand.players.some((player) => player.name.toLowerCase().includes(filter)))
     : state.hands;
+}
+
+function renderHands() {
+  const hands = filteredHands();
 
   if (hands.length === 0) {
     elements.handList.innerHTML = '<div class="empty">No matching hands.</div>';
@@ -174,18 +286,80 @@ function renderHands() {
     .map((hand) => {
       const heroCards = hand.hero ? hand.holeCards[hand.hero] : [];
       const winners = Object.keys(hand.winnings);
+      const active = hand.id === state.selectedHandId ? "active" : "";
       return `
-        <article class="hand">
+        <button class="hand ${active}" type="button" data-hand-id="${escapeHtml(hand.id)}">
           <div class="hand-title">
             <strong>#${escapeHtml(hand.handNumber)}</strong>
             <span class="pill">${escapeHtml(hand.tableName ?? "Table")}</span>
           </div>
           ${renderCards([...heroCards, ...hand.board])}
           <p>${escapeHtml(hand.hero ?? "Unknown")} ${heroCards?.length ? "was dealt" : "sat in"} ${escapeHtml(heroCards?.join(" ") ?? "")}. Winner: ${escapeHtml(winners.join(", ") || "not shown")}.</p>
-        </article>
+        </button>
       `;
     })
     .join("");
+}
+
+function renderHandDetail() {
+  const hand = state.hands.find((item) => item.id === state.selectedHandId);
+
+  if (!hand) {
+    elements.handDetail.innerHTML = '<div class="empty">Select a hand to review the action.</div>';
+    return;
+  }
+
+  const heroCards = hand.hero ? hand.holeCards[hand.hero] : [];
+  const actionGroups = new Map(streetOrder.map((street) => [street, []]));
+
+  for (const action of hand.actions) {
+    if (!actionGroups.has(action.street)) {
+      actionGroups.set(action.street, []);
+    }
+    actionGroups.get(action.street).push(action);
+  }
+
+  const seats = hand.players
+    .map(
+      (player) => `
+        <li>
+          <span>${escapeHtml(player.position ?? "Seat")}</span>
+          <strong>${escapeHtml(player.name)}</strong>
+          <small>${Number(player.stack).toFixed(2)}</small>
+        </li>
+      `
+    )
+    .join("");
+
+  const streets = [...actionGroups.entries()]
+    .filter(([, actions]) => actions.length > 0)
+    .map(
+      ([street, actions]) => `
+        <section class="street">
+          <h4>${streetLabels[street] ?? escapeHtml(street)}</h4>
+          <ol>
+            ${actions.map((action) => `<li>${formatAction(action)}</li>`).join("")}
+          </ol>
+        </section>
+      `
+    )
+    .join("");
+
+  elements.handDetail.innerHTML = `
+    <article class="detail-summary">
+      <div>
+        <span class="subtle">Hand</span>
+        <strong>#${escapeHtml(hand.handNumber)}</strong>
+      </div>
+      <div>
+        <span class="subtle">Hero</span>
+        <strong>${escapeHtml(hand.hero ?? "Unknown")}</strong>
+      </div>
+    </article>
+    ${renderCards([...heroCards, ...hand.board])}
+    <ul class="seat-list">${seats}</ul>
+    <div class="street-list">${streets || '<div class="empty">No actions parsed for this hand.</div>'}</div>
+  `;
 }
 
 function renderImports() {
@@ -198,8 +372,12 @@ function renderImports() {
     .map(
       (item) => `
         <article class="import-row">
-          <strong>${escapeHtml(item.name)}</strong>
-          <p>${item.handCount} hands from ${escapeHtml(item.source)} on ${new Date(item.importedAt).toLocaleString()}</p>
+          <div>
+            <strong>${escapeHtml(item.name)}</strong>
+            <p>${item.handCount} new hands from ${escapeHtml(item.source)} on ${new Date(item.importedAt).toLocaleString()}</p>
+            <p>${item.skippedCount ?? 0} duplicate hands skipped</p>
+          </div>
+          <button class="button danger" type="button" data-delete-import="${escapeHtml(item.id)}">Delete</button>
         </article>
       `
     )
@@ -207,17 +385,27 @@ function renderImports() {
 }
 
 function render() {
+  if (state.selectedHandId && !state.hands.some((hand) => hand.id === state.selectedHandId)) {
+    state.selectedHandId = null;
+  }
+
+  if (!state.selectedHandId && state.hands.length > 0) {
+    state.selectedHandId = state.hands[0].id;
+  }
+
   renderMetrics();
   renderPlayerOptions();
   renderPlayerStats();
+  renderCharts();
   renderLeaks();
   renderHands();
+  renderHandDetail();
   renderImports();
 }
 
 async function refresh() {
   const [handsPayload, importsPayload, statsPayload, leaksPayload] = await Promise.all([
-    api("/api/hands?limit=200"),
+    api("/api/hands?limit=500"),
     api("/api/imports"),
     api("/api/stats/summary"),
     api("/api/leaks")
@@ -230,6 +418,15 @@ async function refresh() {
   render();
 }
 
+function readSelectedFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read file."));
+    reader.readAsText(file);
+  });
+}
+
 elements.navButtons.forEach((button) => {
   button.addEventListener("click", () => setView(button.dataset.view));
 });
@@ -238,7 +435,22 @@ elements.loadDemo.addEventListener("click", async () => {
   try {
     const payload = await api("/api/demo", { method: "POST" });
     await refresh();
-    showToast(`Loaded ${payload.import.handCount} sample hands.`);
+    showToast(payload.duplicate ? "Sample was already loaded." : `Loaded ${payload.import.handCount} sample hands.`);
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
+elements.clearSession.addEventListener("click", async () => {
+  if (!window.confirm("Clear all imported hands from this local session?")) {
+    return;
+  }
+
+  try {
+    const payload = await api("/api/session", { method: "DELETE" });
+    state.selectedHandId = null;
+    await refresh();
+    showToast(`Cleared ${payload.removedHands} hands.`);
   } catch (error) {
     showToast(error.message);
   }
@@ -253,8 +465,61 @@ elements.refresh.addEventListener("click", async () => {
   }
 });
 
-elements.playerFilter.addEventListener("change", renderPlayerStats);
+elements.playerFilter.addEventListener("change", () => {
+  renderPlayerStats();
+  renderCharts();
+});
 elements.handPlayerFilter.addEventListener("input", renderHands);
+
+elements.handList.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-hand-id]");
+  if (!target) {
+    return;
+  }
+
+  state.selectedHandId = target.dataset.handId;
+  renderHands();
+  renderHandDetail();
+});
+
+elements.importList.addEventListener("click", async (event) => {
+  const target = event.target.closest("[data-delete-import]");
+  if (!target || !window.confirm("Delete this import and its hands?")) {
+    return;
+  }
+
+  try {
+    const payload = await api(`/api/imports/${encodeURIComponent(target.dataset.deleteImport)}`, {
+      method: "DELETE"
+    });
+    await refresh();
+    showToast(`Deleted ${payload.removedHands} hands.`);
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
+elements.historyFile.addEventListener("change", async (event) => {
+  const [file] = event.target.files;
+  if (!file) {
+    return;
+  }
+
+  try {
+    const rawText = await readSelectedFile(file);
+    elements.importForm.elements.rawText.value = rawText;
+    elements.importForm.elements.name.value = file.name.replace(/\.[^.]+$/, "") || "Imported session";
+    elements.importForm.elements.source.value = "file-upload";
+    showToast(`Loaded ${file.name} into the import form.`);
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
+elements.clearImportText.addEventListener("click", () => {
+  elements.importForm.elements.rawText.value = "";
+  elements.historyFile.value = "";
+});
 
 elements.importForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -270,7 +535,7 @@ elements.importForm.addEventListener("submit", async (event) => {
       }
     });
     await refresh();
-    showToast(`Imported ${payload.import.handCount} hands.`);
+    showToast(payload.duplicate ? "That session is already imported." : `Imported ${payload.import.handCount} hands.`);
   } catch (error) {
     showToast(error.message);
   }

@@ -15,6 +15,7 @@ Returns service status.
 ```http
 GET /api/imports
 POST /api/imports
+DELETE /api/imports/:id
 ```
 
 Create an import:
@@ -29,6 +30,8 @@ Create an import:
 
 The response includes the import record and a small hand preview.
 
+Exact duplicate uploads return the existing import with `duplicate: true`. Overlapping hands are skipped when their hand keys already exist.
+
 ## Demo
 
 ```http
@@ -37,10 +40,13 @@ POST /api/demo
 
 Loads `samples/pokerstars-small.txt`.
 
+Repeated calls do not duplicate the sample hands.
+
 ## Hands
 
 ```http
 GET /api/hands?limit=100&player=Tao&position=BTN
+GET /api/hands/:id
 ```
 
 All query params are optional.
@@ -63,6 +69,14 @@ GET /api/leaks?player=Tao
 
 Returns rule-based notes for the current sample.
 
+## Session
+
+```http
+DELETE /api/session
+```
+
+Clears all local imports and parsed hands.
+
 ## Equity
 
 ```http
@@ -79,4 +93,3 @@ POST /api/equity/calculate
 ```
 
 Cards use short notation: rank then suit. Examples: `Ah`, `Td`, `7c`, `Ks`.
-

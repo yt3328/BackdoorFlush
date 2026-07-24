@@ -2,7 +2,7 @@
 
 PokerFeltScope is a small hand-history desk for reviewing poker sessions.
 
-The first version keeps things local: paste or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, and run quick equity checks. The AWS folder sketches the pieces needed when the parser moves from a local app into an upload-and-process pipeline.
+The current version keeps things local: upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, and run quick equity checks. The AWS folder sketches the pieces needed when the parser moves from a local app into an upload-and-process pipeline.
 
 ## Run it
 
@@ -17,13 +17,16 @@ Open:
 http://localhost:3400
 ```
 
-The local app stores state in `data/poker-felt-scope.json`. Delete that file when you want a clean table.
+The local app stores state in `data/poker-felt-scope.json`. You can clear the session from the dashboard or delete that file when you want a clean table.
 
 ## What works
 
-- Imports PokerStars-style text hand histories.
+- Imports PokerStars-style text hand histories from a file picker or pasted text.
+- Skips duplicate uploads and overlapping hands.
 - Stores parsed hands in a local JSON store.
-- Shows VPIP, PFR, 3-bet rate, aggression factor, and position splits.
+- Deletes individual imports or clears the local session.
+- Shows VPIP, PFR, 3-bet rate, aggression factor, position splits, and compact charts.
+- Replays parsed actions street by street for each hand.
 - Flags a few basic review signals from the current sample.
 - Runs a Monte Carlo equity check for 2-card Hold'em hands.
 - Serves a small dashboard and REST API from one Node process.
@@ -36,6 +39,7 @@ curl -X POST http://localhost:3400/api/demo
 curl http://localhost:3400/api/hands
 curl http://localhost:3400/api/stats/summary
 curl http://localhost:3400/api/leaks
+curl -X DELETE http://localhost:3400/api/session
 ```
 
 Equity check:
@@ -64,8 +68,8 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 
 ## Next
 
-- Support more hand-history formats.
+- Support more hand-history formats and larger real-world exports.
 - Store uploads in S3 and parsed hands in DynamoDB.
 - Move parsing into an SQS-backed worker.
-- Add session-level graphs and bankroll tracking.
+- Add bankroll tracking and richer session-level graphs.
 - Replace the first-pass review rules with a larger recommendation engine.

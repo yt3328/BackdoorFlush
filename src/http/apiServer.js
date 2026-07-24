@@ -23,6 +23,16 @@ function parseLimit(value) {
   return Math.max(1, Math.min(500, Number.isFinite(limit) ? limit : 100));
 }
 
+function importIdFromPath(pathname) {
+  const match = pathname.match(/^\/api\/imports\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function handIdFromPath(pathname) {
+  const match = pathname.match(/^\/api\/hands\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 async function createImport(request, response, store) {
   const payload = await readJsonBody(request);
   const rawText = payload.rawText;
@@ -34,9 +44,11 @@ async function createImport(request, response, store) {
     hands
   });
 
-  sendJson(response, 201, {
+  sendJson(response, result.duplicate ? 200 : 201, {
     import: result.import,
-    handPreview: result.hands.slice(0, 3)
+    handPreview: result.hands.slice(0, 3),
+    duplicate: Boolean(result.duplicate),
+    skippedCount: result.skippedCount ?? 0
   });
 }
 
@@ -75,6 +87,12 @@ export function createHttpServer({ store }) {
         return;
       }
 
+      const importId = importIdFromPath(requestUrl.pathname);
+      if (importId && request.method === "DELETE") {
+        sendJson(response, 200, store.deleteImport(importId));
+        return;
+      }
+
       if (requestUrl.pathname === "/api/demo") {
         if (!methodAllowed(request, response, "POST")) {
           return;
@@ -89,9 +107,11 @@ export function createHttpServer({ store }) {
           hands
         });
 
-        sendJson(response, 201, {
+        sendJson(response, result.duplicate ? 200 : 201, {
           import: result.import,
-          handPreview: result.hands.slice(0, 3)
+          handPreview: result.hands.slice(0, 3),
+          duplicate: Boolean(result.duplicate),
+          skippedCount: result.skippedCount ?? 0
         });
         return;
       }
@@ -108,6 +128,18 @@ export function createHttpServer({ store }) {
             position: requestUrl.searchParams.get("position")
           })
         });
+        return;
+      }
+
+      const handId = handIdFromPath(requestUrl.pathname);
+      if (handId && request.method === "GET") {
+        const hand = store.getHand(handId);
+        if (!hand) {
+          sendError(response, 404, "Hand not found.");
+          return;
+        }
+
+        sendJson(response, 200, { hand });
         return;
       }
 
@@ -141,6 +173,15 @@ export function createHttpServer({ store }) {
         return;
       }
 
+      if (requestUrl.pathname === "/api/session") {
+        if (!methodAllowed(request, response, "DELETE")) {
+          return;
+        }
+
+        sendJson(response, 200, store.clear());
+        return;
+      }
+
       if (requestUrl.pathname === "/api/equity/calculate") {
         if (!methodAllowed(request, response, "POST")) {
           return;
@@ -162,7 +203,8 @@ export function createHttpServer({ store }) {
         error.message.includes("expects") ||
         error.message.includes("cannot") ||
         error.message.includes("No hands");
-      sendError(response, badRequest ? 400 : 500, error.message);
+      const notFound = error.message.includes("not found");
+      sendError(response, notFound ? 404 : badRequest ? 400 : 500, error.message);
     }
   });
 }
