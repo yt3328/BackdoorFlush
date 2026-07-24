@@ -1,6 +1,6 @@
 # Deployment
 
-Version 0.4 adds cloud sign-in and static frontend hosting, but local mode still works with `npm start`.
+Version 0.5 adds cloud sign-in, static frontend hosting, bankroll sessions, and the visual hand replayer, but local mode still works with `npm start`.
 
 ## What Deploys
 
@@ -14,6 +14,7 @@ The SAM template creates:
 - S3 bucket for raw hand-history text
 - DynamoDB imports table
 - DynamoDB hands table
+- DynamoDB bankroll sessions table
 - Private S3 bucket for the dashboard
 - CloudFront distribution for the dashboard
 - CloudWatch alarms for Lambda errors

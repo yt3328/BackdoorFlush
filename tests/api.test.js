@@ -146,3 +146,60 @@ test("equity endpoint returns a result", async () => {
   assert.equal(response.status, 200);
   assert.ok(payload.result.equityPct >= 0);
 });
+
+test("bankroll session endpoints create, summarize, and delete sessions", async () => {
+  const createResponse = await dispatch({
+    method: "POST",
+    url: "/api/bankroll/sessions",
+    body: {
+      date: "2026-07-24",
+      location: "PokerStars",
+      gameType: "cash",
+      stakes: "$1/$2",
+      hours: 3,
+      buyIn: 400,
+      cashOut: 520,
+      notes: "Good value tables."
+    }
+  });
+  const createPayload = await createResponse.json();
+  const listResponse = await dispatch({ url: "/api/bankroll/sessions" });
+  const listPayload = await listResponse.json();
+  const summaryResponse = await dispatch({ url: "/api/bankroll/summary" });
+  const summaryPayload = await summaryResponse.json();
+  const deleteResponse = await dispatch({
+    method: "DELETE",
+    url: `/api/bankroll/sessions/${createPayload.session.id}`
+  });
+  const deletePayload = await deleteResponse.json();
+
+  assert.equal(createResponse.status, 201);
+  assert.equal(createPayload.session.profit, 120);
+  assert.equal(createPayload.session.bbPerHour, 20);
+  assert.equal(listPayload.sessions.length, 1);
+  assert.equal(summaryPayload.summary.totalProfit, 120);
+  assert.equal(summaryPayload.summary.sessionCount, 1);
+  assert.equal(deleteResponse.status, 200);
+  assert.equal(deletePayload.session.id, createPayload.session.id);
+});
+
+test("clearing imported hands preserves bankroll records", async () => {
+  await dispatch({
+    method: "POST",
+    url: "/api/bankroll/sessions",
+    body: {
+      date: "2026-07-24",
+      location: "Casino",
+      stakes: "$2/$5",
+      hours: 2,
+      profit: 200
+    }
+  });
+  await dispatch({ method: "POST", url: "/api/demo" });
+  await dispatch({ method: "DELETE", url: "/api/session" });
+  const summaryResponse = await dispatch({ url: "/api/bankroll/summary" });
+  const summaryPayload = await summaryResponse.json();
+
+  assert.equal(summaryPayload.summary.sessionCount, 1);
+  assert.equal(summaryPayload.summary.totalProfit, 200);
+});

@@ -83,7 +83,34 @@ Returns rule-based notes for the current sample.
 DELETE /api/session
 ```
 
-Clears all local imports and parsed hands.
+Clears imported hand-history records and parsed hands. Bankroll records are preserved.
+
+## Bankroll
+
+```http
+GET /api/bankroll/sessions
+POST /api/bankroll/sessions
+DELETE /api/bankroll/sessions/:id
+GET /api/bankroll/summary
+```
+
+Create a bankroll session:
+
+```json
+{
+  "date": "2026-07-24",
+  "location": "PokerStars",
+  "gameType": "cash",
+  "stakes": "$1/$2",
+  "tableSize": 6,
+  "hours": 3,
+  "buyIn": 400,
+  "cashOut": 520,
+  "notes": "Good value tables."
+}
+```
+
+The server calculates `profit`, `bbWon`, `hourlyRate`, and `bbPerHour`. If `profit` is sent directly, it overrides the buy-in/cash-out calculation.
 
 ## Equity
 

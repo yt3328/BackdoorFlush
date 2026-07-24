@@ -2,11 +2,13 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { mkdirSync } from "node:fs";
 import { handKey, hashText } from "../core/importIdentity.js";
+import { buildBankrollSession, summarizeBankrollSessions } from "../core/sessionTracker.js";
 
 function emptyState() {
   return {
     imports: [],
-    hands: []
+    hands: [],
+    bankrollSessions: []
   };
 }
 
@@ -31,7 +33,8 @@ export class HandStore {
       hands: Array.isArray(state.hands) ? state.hands.map((hand) => ({
         ...hand,
         handKey: hand.handKey ?? handKey(hand)
-      })) : []
+      })) : [],
+      bankrollSessions: Array.isArray(state.bankrollSessions) ? state.bankrollSessions : []
     };
   }
 
@@ -135,6 +138,43 @@ export class HandStore {
     return this.state.hands.find((hand) => hand.id === id) ?? null;
   }
 
+  listBankrollSessions() {
+    return [...this.state.bankrollSessions].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  }
+
+  createBankrollSession(payload) {
+    const id = createId("sess");
+    const session = buildBankrollSession(payload, {
+      id
+    });
+
+    this.state.bankrollSessions.unshift(session);
+    this.save();
+
+    return session;
+  }
+
+  deleteBankrollSession(id) {
+    const existingSession = this.state.bankrollSessions.find((session) => session.id === id || session.sessionId === id);
+
+    if (!existingSession) {
+      throw new Error("Bankroll session not found.");
+    }
+
+    this.state.bankrollSessions = this.state.bankrollSessions.filter(
+      (session) => session.id !== id && session.sessionId !== id
+    );
+    this.save();
+
+    return {
+      session: existingSession
+    };
+  }
+
+  bankrollSummary() {
+    return summarizeBankrollSessions(this.state.bankrollSessions);
+  }
+
   deleteImport(id) {
     const existingImport = this.state.imports.find((record) => record.id === id);
 
@@ -156,7 +196,8 @@ export class HandStore {
   clear() {
     const removedImports = this.state.imports.length;
     const removedHands = this.state.hands.length;
-    this.state = emptyState();
+    this.state.imports = [];
+    this.state.hands = [];
     this.save();
 
     return {

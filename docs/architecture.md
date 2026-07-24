@@ -12,19 +12,21 @@ flowchart LR
   API --> ImportLambda["Import Lambda"]
   API --> ReadLambda["Read Lambda"]
   API --> EquityLambda["Equity Lambda"]
+  API --> SessionLambda["Session Tracker Routes"]
   ImportLambda --> S3["S3 raw uploads"]
   ImportLambda --> Queue["SQS parse queue"]
   Queue --> Parser["Parser worker"]
   Parser --> Dynamo["DynamoDB hands table"]
   ReadLambda --> Dynamo
+  SessionLambda --> SessionsDynamo["DynamoDB sessions table"]
   EquityLambda --> Model["Local calculator or SageMaker endpoint"]
 ```
 
 ## Local Version
 
 - One Node process serves static files and API routes.
-- A JSON file stores imports and parsed hands.
-- The parser, stats engine, and equity calculator are plain modules with tests.
+- A JSON file stores imports, parsed hands, and bankroll sessions.
+- The parser, stats engine, bankroll tracker, and equity calculator are plain modules with tests.
 
 ## AWS Version
 
@@ -33,9 +35,10 @@ flowchart LR
 - Cognito signs users in through the Hosted UI.
 - API Gateway fronts the public API.
 - API Gateway validates Cognito JWTs before private routes reach Lambda.
-- Lambda handles imports, reads, stats, and equity checks.
+- Lambda handles imports, reads, stats, bankroll sessions, and equity checks.
 - SQS buffers parse jobs so large uploads do not block requests.
 - DynamoDB stores parsed hand records keyed by the signed-in user's Cognito subject.
+- DynamoDB stores bankroll sessions in a separate table keyed by the same signed-in user.
 - CloudWatch alarms track API and parse worker errors.
 - SageMaker can be added later for recommendation or clustering work.
 
@@ -57,6 +60,23 @@ Parsed hands should eventually include:
 - `winnings`
 - `createdAt`
 
-## Version 0.4 Boundaries
+Bankroll sessions include:
 
-The cloud backend and frontend host are deployed with SAM. The dashboard files are still plain static assets, so publishing the frontend is a separate `aws s3 sync` step after the stack is updated and `public/config.js` contains the API and Cognito outputs.
+- `userId`
+- `sessionId`
+- `date`
+- `location`
+- `gameType`
+- `stakes`
+- `hours`
+- `buyIn`
+- `cashOut`
+- `profit`
+- `bbWon`
+- `hourlyRate`
+- `bbPerHour`
+- `notes`
+
+## Version 0.5 Boundaries
+
+The cloud backend and frontend host are deployed with SAM. The dashboard files are still plain static assets, so publishing the frontend is a separate `aws s3 sync` step after the stack is updated and `public/config.js` contains the API and Cognito outputs. v0.5 does not yet link imported hands directly to bankroll session records; that relationship can be added on top of the new session table.

@@ -31,6 +31,11 @@ function handIdFromPath(pathname) {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+function bankrollSessionIdFromPath(pathname) {
+  const match = pathname.match(/^\/api\/bankroll\/sessions\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 async function createImportFromText({ store, payload }) {
   const result = await store.createQueuedImport({
     name: payload.name,
@@ -168,6 +173,29 @@ export async function api(event) {
       });
     }
 
+    if (pathname === "/api/bankroll/sessions" && method === "GET") {
+      return jsonResponse(200, {
+        sessions: await store.listBankrollSessions()
+      });
+    }
+
+    if (pathname === "/api/bankroll/sessions" && method === "POST") {
+      return jsonResponse(201, {
+        session: await store.createBankrollSession(eventBody(event))
+      });
+    }
+
+    const bankrollSessionId = bankrollSessionIdFromPath(pathname);
+    if (bankrollSessionId && method === "DELETE") {
+      return jsonResponse(200, await store.deleteBankrollSession(bankrollSessionId));
+    }
+
+    if (pathname === "/api/bankroll/summary" && method === "GET") {
+      return jsonResponse(200, {
+        summary: await store.bankrollSummary()
+      });
+    }
+
     if (pathname === "/api/session" && method === "DELETE") {
       return jsonResponse(200, await store.clear());
     }
@@ -218,4 +246,3 @@ export async function processParseQueue(event) {
     results
   };
 }
-

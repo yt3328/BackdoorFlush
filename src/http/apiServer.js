@@ -33,6 +33,11 @@ function handIdFromPath(pathname) {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+function bankrollSessionIdFromPath(pathname) {
+  const match = pathname.match(/^\/api\/bankroll\/sessions\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 async function createImport(request, response, store) {
   const payload = await readJsonBody(request);
   const rawText = payload.rawText;
@@ -169,6 +174,38 @@ export function createHttpServer({ store }) {
 
         sendJson(response, 200, {
           leaks: detectLeaks(summary)
+        });
+        return;
+      }
+
+      if (requestUrl.pathname === "/api/bankroll/sessions" && request.method === "GET") {
+        sendJson(response, 200, {
+          sessions: store.listBankrollSessions()
+        });
+        return;
+      }
+
+      if (requestUrl.pathname === "/api/bankroll/sessions" && request.method === "POST") {
+        const payload = await readJsonBody(request);
+        sendJson(response, 201, {
+          session: store.createBankrollSession(payload)
+        });
+        return;
+      }
+
+      const bankrollSessionId = bankrollSessionIdFromPath(requestUrl.pathname);
+      if (bankrollSessionId && request.method === "DELETE") {
+        sendJson(response, 200, store.deleteBankrollSession(bankrollSessionId));
+        return;
+      }
+
+      if (requestUrl.pathname === "/api/bankroll/summary") {
+        if (!methodAllowed(request, response, "GET")) {
+          return;
+        }
+
+        sendJson(response, 200, {
+          summary: store.bankrollSummary()
         });
         return;
       }

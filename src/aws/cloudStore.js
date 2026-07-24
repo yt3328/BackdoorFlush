@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { handKey, hashText } from "../core/importIdentity.js";
+import { buildBankrollSession, summarizeBankrollSessions } from "../core/sessionTracker.js";
 
 function requiredEnv(name) {
   const value = process.env[name];
@@ -49,6 +50,14 @@ function publicHand(item) {
   };
 }
 
+function publicBankrollSession(item) {
+  const { userId, ...rest } = item;
+  return {
+    ...rest,
+    id: item.sessionId
+  };
+}
+
 async function batchWriteAll(dynamo, sdk, requestItems) {
   let pending = requestItems;
 
@@ -66,6 +75,7 @@ export class CloudHandStore {
     this.clients = clients;
     this.importsTable = requiredEnv("IMPORTS_TABLE_NAME");
     this.handsTable = requiredEnv("HANDS_TABLE_NAME");
+    this.sessionsTable = requiredEnv("SESSIONS_TABLE_NAME");
     this.rawBucket = requiredEnv("RAW_UPLOADS_BUCKET");
     this.parseQueueUrl = process.env.PARSE_QUEUE_URL ?? null;
   }
@@ -314,6 +324,82 @@ export class CloudHandStore {
     }));
 
     return result.Item ? publicHand(result.Item) : null;
+  }
+
+  async listBankrollSessions() {
+    const { dynamo, sdk } = this.clients;
+    const result = await dynamo.send(new sdk.QueryCommand({
+      TableName: this.sessionsTable,
+      KeyConditionExpression: "userId = :userId",
+      ExpressionAttributeValues: {
+        ":userId": this.userId
+      },
+      Limit: 200
+    }));
+
+    return (result.Items ?? [])
+      .map(publicBankrollSession)
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  }
+
+  async createBankrollSession(payload) {
+    const { dynamo, sdk } = this.clients;
+    const sessionId = createId("sess");
+    const session = buildBankrollSession(payload, {
+      id: sessionId
+    });
+    const storedSession = {
+      ...session,
+      id: undefined,
+      userId: this.userId,
+      sessionId
+    };
+
+    await dynamo.send(new sdk.PutCommand({
+      TableName: this.sessionsTable,
+      Item: storedSession,
+      ConditionExpression: "attribute_not_exists(userId) AND attribute_not_exists(sessionId)"
+    }));
+
+    return publicBankrollSession(storedSession);
+  }
+
+  async getBankrollSession(sessionId) {
+    const { dynamo, sdk } = this.clients;
+    const result = await dynamo.send(new sdk.GetCommand({
+      TableName: this.sessionsTable,
+      Key: {
+        userId: this.userId,
+        sessionId
+      }
+    }));
+
+    return result.Item ? publicBankrollSession(result.Item) : null;
+  }
+
+  async deleteBankrollSession(sessionId) {
+    const { dynamo, sdk } = this.clients;
+    const existingSession = await this.getBankrollSession(sessionId);
+
+    if (!existingSession) {
+      throw new Error("Bankroll session not found.");
+    }
+
+    await dynamo.send(new sdk.DeleteCommand({
+      TableName: this.sessionsTable,
+      Key: {
+        userId: this.userId,
+        sessionId
+      }
+    }));
+
+    return {
+      session: existingSession
+    };
+  }
+
+  async bankrollSummary() {
+    return summarizeBankrollSessions(await this.listBankrollSessions());
   }
 
   async deleteImport(importId) {

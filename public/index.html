@@ -19,6 +19,7 @@
 
         <nav class="nav" aria-label="Dashboard views">
           <button class="nav-button active" data-view="overview">Overview</button>
+          <button class="nav-button" data-view="sessions">Sessions</button>
           <button class="nav-button" data-view="hands">Hands</button>
           <button class="nav-button" data-view="equity">Equity</button>
           <button class="nav-button" data-view="imports">Imports</button>
@@ -83,6 +84,41 @@
             </article>
           </div>
 
+          <div class="metrics bankroll-metrics">
+            <article class="metric">
+              <span class="metric-label">Profit</span>
+              <strong id="metric-profit">$0</strong>
+            </article>
+            <article class="metric">
+              <span class="metric-label">Sessions</span>
+              <strong id="metric-sessions">0</strong>
+            </article>
+            <article class="metric">
+              <span class="metric-label">Hourly</span>
+              <strong id="metric-hourly">$0/hr</strong>
+            </article>
+            <article class="metric">
+              <span class="metric-label">BB/hr</span>
+              <strong id="metric-bbhr">0</strong>
+            </article>
+          </div>
+
+          <div class="split chart-row">
+            <section class="panel">
+              <div class="panel-head">
+                <h3>Bankroll Curve</h3>
+              </div>
+              <div id="bankroll-chart" class="bankroll-chart"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h3>Location Mix</h3>
+              </div>
+              <div id="location-chart" class="chart-list"></div>
+            </section>
+          </div>
+
           <div class="split chart-row">
             <section class="panel">
               <div class="panel-head">
@@ -129,6 +165,79 @@
                 <h3>Review Queue</h3>
               </div>
               <div id="leak-list" class="leak-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="view-sessions">
+          <div class="split sessions-workspace">
+            <section class="panel">
+              <div class="panel-head">
+                <h3>New Session</h3>
+              </div>
+              <form id="bankroll-form" class="form session-form">
+                <div class="form-grid">
+                  <label>
+                    Date
+                    <input name="date" type="date">
+                  </label>
+                  <label>
+                    Location
+                    <input name="location" value="PokerStars" autocomplete="off">
+                  </label>
+                  <label>
+                    Game
+                    <select name="gameType">
+                      <option value="cash">Cash</option>
+                      <option value="tournament">Tournament</option>
+                      <option value="home-game">Home game</option>
+                    </select>
+                  </label>
+                  <label>
+                    Stakes
+                    <input name="stakes" value="$0.05/$0.10" autocomplete="off">
+                  </label>
+                  <label>
+                    Table size
+                    <input name="tableSize" value="6" inputmode="numeric">
+                  </label>
+                  <label>
+                    Hours
+                    <input name="hours" value="2.5" inputmode="decimal">
+                  </label>
+                  <label>
+                    Buy-in
+                    <input name="buyIn" value="50" inputmode="decimal">
+                  </label>
+                  <label>
+                    Cash-out
+                    <input name="cashOut" value="64" inputmode="decimal">
+                  </label>
+                  <label>
+                    Result
+                    <input name="profit" value="" inputmode="decimal">
+                  </label>
+                  <label>
+                    Big blind
+                    <input name="bigBlind" value="0.10" inputmode="decimal">
+                  </label>
+                </div>
+                <label>
+                  Notes
+                  <textarea name="notes" rows="5"></textarea>
+                </label>
+                <div class="form-actions">
+                  <button class="button" type="submit">Add Session</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h3>Session Log</h3>
+              </div>
+              <div id="session-summary" class="session-summary"></div>
+              <div id="session-list" class="session-list"></div>
             </section>
           </div>
         </section>

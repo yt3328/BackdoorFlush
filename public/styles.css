@@ -427,7 +427,8 @@ th {
 
 .leak-list,
 .hand-list,
-.import-list {
+.import-list,
+.session-list {
   display: grid;
   gap: 10px;
   padding: 16px;
@@ -435,7 +436,8 @@ th {
 
 .leak,
 .hand,
-.import-row {
+.import-row,
+.session-row {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
@@ -453,7 +455,8 @@ th {
   box-shadow: 0 0 0 3px rgba(15, 107, 79, 0.12);
 }
 
-.import-row {
+.import-row,
+.session-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -469,7 +472,8 @@ th {
 }
 
 .leak-title,
-.hand-title {
+.hand-title,
+.session-row-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -479,13 +483,15 @@ th {
 
 .leak strong,
 .hand strong,
-.import-row strong {
+.import-row strong,
+.session-row strong {
   font-size: 0.95rem;
 }
 
 .leak p,
 .hand p,
-.import-row p {
+.import-row p,
+.session-row p {
   margin: 0;
   color: var(--muted);
   line-height: 1.45;
@@ -560,6 +566,12 @@ th {
   display: grid;
   gap: 14px;
   padding: 16px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .form-actions {
@@ -671,6 +683,92 @@ th {
   background: var(--felt-dark);
 }
 
+.single-bar.negative span {
+  background: var(--clay);
+}
+
+.single-bar.positive span {
+  background: var(--felt);
+}
+
+.bankroll-chart {
+  padding: 16px;
+}
+
+.bankroll-chart svg {
+  display: block;
+  width: 100%;
+  min-height: 260px;
+}
+
+.zero-line {
+  stroke: #ccd3cb;
+  stroke-width: 2;
+  stroke-dasharray: 6 6;
+}
+
+.bankroll-line {
+  fill: none;
+  stroke: var(--felt-dark);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 5;
+}
+
+.bankroll-point {
+  stroke: #fff;
+  stroke-width: 3;
+}
+
+.bankroll-point.win {
+  fill: var(--felt);
+}
+
+.bankroll-point.loss {
+  fill: var(--clay);
+}
+
+.chart-axis {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.chart-axis strong {
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.chart-axis span:last-child {
+  text-align: right;
+}
+
+.session-summary {
+  padding: 16px 16px 0;
+}
+
+.session-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.session-kpis div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.session-kpis strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 1.2rem;
+}
+
 .hand-detail {
   padding: 16px;
 }
@@ -752,6 +850,158 @@ th {
   line-height: 1.55;
 }
 
+.replayer {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0 16px;
+}
+
+.replay-table {
+  position: relative;
+  min-height: 370px;
+  border: 10px solid #70472f;
+  border-radius: 999px;
+  background: radial-gradient(circle at center, #14765a 0%, #0d4e3d 74%);
+  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.12);
+}
+
+.board-zone {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(300px, 62%);
+  min-height: 126px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  border-radius: 8px;
+  background: rgba(10, 40, 31, 0.36);
+  color: #f9f8f0;
+  transform: translate(-50%, -50%);
+}
+
+.board-zone .cards {
+  justify-content: center;
+  margin: 8px 0;
+}
+
+.board-zone .subtle,
+.board-zone small {
+  color: #dce8df;
+}
+
+.replay-seat {
+  position: absolute;
+  width: 132px;
+  min-height: 96px;
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 8px;
+  background: #fffaf0;
+  color: var(--ink);
+  padding: 9px;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.24);
+}
+
+.replay-seat.active {
+  border-color: #f4c75f;
+  box-shadow: 0 0 0 4px rgba(244, 199, 95, 0.34), 0 12px 24px rgba(0, 0, 0, 0.24);
+}
+
+.replay-seat.folded {
+  opacity: 0.54;
+}
+
+.replay-seat span,
+.replay-seat small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.seat-pos-0 {
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+}
+
+.seat-pos-1 {
+  right: 18px;
+  top: 82px;
+}
+
+.seat-pos-2 {
+  right: 36px;
+  bottom: 28px;
+}
+
+.seat-pos-3 {
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+}
+
+.seat-pos-4 {
+  left: 36px;
+  bottom: 28px;
+}
+
+.seat-pos-5 {
+  left: 18px;
+  top: 82px;
+}
+
+.mini-cards {
+  display: flex;
+  gap: 4px;
+}
+
+.mini-cards em {
+  width: 26px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #d4d8d0;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.mini-cards .red {
+  color: var(--clay);
+}
+
+.replay-controls {
+  display: grid;
+  grid-template-columns: auto auto minmax(160px, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.replay-action {
+  min-height: 48px;
+  display: grid;
+  align-content: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px 12px;
+}
+
+.replay-action strong,
+.replay-action span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.replay-action span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .toast {
   position: fixed;
   right: 18px;
@@ -792,7 +1042,7 @@ th {
   }
 
   .nav {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .nav-button {
@@ -802,7 +1052,8 @@ th {
 
   .metrics,
   .split,
-  .hands-workspace {
+  .hands-workspace,
+  .sessions-workspace {
     grid-template-columns: 1fr;
   }
 
@@ -856,12 +1107,58 @@ th {
   }
 
   .seat-list,
-  .detail-summary {
+  .detail-summary,
+  .form-grid,
+  .session-kpis {
     grid-template-columns: 1fr;
   }
 
-  .import-row {
+  .import-row,
+  .session-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .replay-table {
+    min-height: 520px;
+    border-radius: 80px;
+  }
+
+  .replay-seat {
+    width: 118px;
+  }
+
+  .seat-pos-0,
+  .seat-pos-3 {
+    left: 50%;
+  }
+
+  .seat-pos-1 {
+    right: 8px;
+    top: 132px;
+  }
+
+  .seat-pos-2 {
+    right: 8px;
+    bottom: 132px;
+  }
+
+  .seat-pos-4 {
+    left: 8px;
+    bottom: 132px;
+  }
+
+  .seat-pos-5 {
+    left: 8px;
+    top: 132px;
+  }
+
+  .replay-controls {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .replay-action {
+    grid-column: 1 / -1;
+    order: -1;
   }
 }

@@ -33,6 +33,7 @@ Globals:
         REQUIRE_AUTH: !Ref RequireAuth
         IMPORTS_TABLE_NAME: !Ref ImportsTable
         HANDS_TABLE_NAME: !Ref HandsTable
+        SESSIONS_TABLE_NAME: !Ref SessionsTable
         RAW_UPLOADS_BUCKET: !Ref RawUploadsBucket
         PARSE_QUEUE_URL: !Ref ParseQueue
 
@@ -282,6 +283,23 @@ Resources:
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
 
+  SessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: sessionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: sessionId
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
   ApiFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -292,6 +310,8 @@ Resources:
             TableName: !Ref ImportsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref HandsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SessionsTable
         - S3CrudPolicy:
             BucketName: !Ref RawUploadsBucket
         - SQSSendMessagePolicy:
@@ -405,6 +425,9 @@ Outputs:
   HandsTableName:
     Description: DynamoDB hands table
     Value: !Ref HandsTable
+  SessionsTableName:
+    Description: DynamoDB bankroll sessions table
+    Value: !Ref SessionsTable
   ParseQueueUrl:
     Description: SQS queue for parsing jobs
     Value: !Ref ParseQueue

@@ -2,9 +2,9 @@
 
 PokerFeltScope is a small hand-history desk for reviewing poker sessions.
 
-The local app lets you upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, and run quick equity checks.
+The local app lets you upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, track bankroll sessions, and run quick equity checks.
 
-Version 0.4 adds the first real cloud boundary: Cognito sign-in, private per-user API access, and a CloudFront/S3 frontend target in the AWS SAM template.
+Version 0.5 adds a bankroll/session tracker and a visual hand replayer on top of the authenticated cloud dashboard.
 
 ## Run it
 
@@ -30,7 +30,9 @@ Local mode:
 - Stores parsed hands in a local JSON store.
 - Deletes individual imports or clears the local session.
 - Shows VPIP, PFR, 3-bet rate, aggression factor, position splits, and compact charts.
-- Replays parsed actions street by street for each hand.
+- Tracks poker sessions with location, stakes, hours, buy-ins, cash-outs, results, hourly rate, and bb/hr.
+- Shows bankroll curve and location-level session charts.
+- Replays parsed actions on a visual table with step controls.
 - Flags a few basic review signals from the current sample.
 - Runs a Monte Carlo equity check for 2-card Hold'em hands.
 - Serves a small dashboard and REST API from one Node process.
@@ -44,6 +46,7 @@ AWS mode:
 - Stores raw text in S3.
 - Parses uploads asynchronously from SQS.
 - Writes imports and parsed hands to DynamoDB.
+- Writes bankroll sessions to a separate DynamoDB table.
 - Exposes the same core stats/equity behavior through Lambda handlers.
 - Hosts the static dashboard from a private S3 bucket through CloudFront.
 
@@ -55,6 +58,7 @@ curl -X POST http://localhost:3400/api/demo
 curl http://localhost:3400/api/hands
 curl http://localhost:3400/api/stats/summary
 curl http://localhost:3400/api/leaks
+curl http://localhost:3400/api/bankroll/summary
 curl -X DELETE http://localhost:3400/api/session
 ```
 
@@ -76,6 +80,7 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 - `src/core/handParser.js` parses hand-history text.
 - `src/core/stats.js` computes player summaries and review signals.
 - `src/core/equity.js` runs the Hold'em equity calculator.
+- `src/core/sessionTracker.js` normalizes bankroll sessions and summary stats.
 - `src/http/apiServer.js` exposes the local API and serves the dashboard.
 - `src/storage/handStore.js` keeps local state.
 - `src/aws/` contains Lambda handlers and AWS data adapters.
@@ -88,5 +93,5 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 ## Next
 
 - Support more hand-history formats and larger real-world exports.
-- Add session and bankroll tracking.
+- Connect imported hand histories directly to bankroll session records.
 - Replace the first-pass review rules with a larger recommendation engine.

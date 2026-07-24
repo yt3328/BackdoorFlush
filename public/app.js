@@ -10,13 +10,31 @@ const streetLabels = {
   "show-down": "Showdown"
 };
 
+const emptyBankrollSummary = {
+  sessionCount: 0,
+  totalProfit: 0,
+  totalHours: 0,
+  totalBb: 0,
+  averageProfit: 0,
+  hourlyRate: 0,
+  bbPerHour: 0,
+  winRate: 0,
+  points: [],
+  byLocation: [],
+  byGameType: [],
+  recentSessions: []
+};
+
 const state = {
   view: "overview",
   hands: [],
   imports: [],
+  bankrollSessions: [],
+  bankrollSummary: emptyBankrollSummary,
   players: [],
   leaks: [],
   selectedHandId: null,
+  replayStep: 0,
   importPollTimer: null
 };
 
@@ -40,8 +58,13 @@ const elements = {
   leakList: document.querySelector("#leak-list"),
   positionChart: document.querySelector("#position-chart"),
   importChart: document.querySelector("#import-chart"),
+  bankrollChart: document.querySelector("#bankroll-chart"),
+  locationChart: document.querySelector("#location-chart"),
   handList: document.querySelector("#hand-list"),
   handDetail: document.querySelector("#hand-detail"),
+  bankrollForm: document.querySelector("#bankroll-form"),
+  sessionList: document.querySelector("#session-list"),
+  sessionSummary: document.querySelector("#session-summary"),
   importList: document.querySelector("#import-list"),
   importForm: document.querySelector("#import-form"),
   historyFile: document.querySelector("#history-file"),
@@ -54,7 +77,11 @@ const elements = {
     hands: document.querySelector("#metric-hands"),
     players: document.querySelector("#metric-players"),
     vpip: document.querySelector("#metric-vpip"),
-    leaks: document.querySelector("#metric-leaks")
+    leaks: document.querySelector("#metric-leaks"),
+    profit: document.querySelector("#metric-profit"),
+    sessions: document.querySelector("#metric-sessions"),
+    hourly: document.querySelector("#metric-hourly"),
+    bbhr: document.querySelector("#metric-bbhr")
   }
 };
 
@@ -108,9 +135,12 @@ function canUsePrivateApi() {
 function clearDashboardData() {
   state.hands = [];
   state.imports = [];
+  state.bankrollSessions = [];
+  state.bankrollSummary = emptyBankrollSummary;
   state.players = [];
   state.leaks = [];
   state.selectedHandId = null;
+  state.replayStep = 0;
 }
 
 function renderAuthState() {
@@ -197,6 +227,81 @@ function formatAction(action) {
   return `${escapeHtml(action.player)} ${escapeHtml(action.type)}${formatAmount(action.amount)}`;
 }
 
+function formatCurrency(value, { compact = false, signed = false } = {}) {
+  const number = Number(value ?? 0);
+  const prefix = signed && number > 0 ? "+" : "";
+  const formatter = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: compact || Math.abs(number) >= 100 ? 0 : 2
+  });
+
+  return `${prefix}${formatter.format(number)}`;
+}
+
+function formatNumber(value, places = 1) {
+  return Number(value ?? 0).toFixed(places);
+}
+
+function formatDate(value) {
+  if (!value) {
+    return "";
+  }
+
+  return new Date(`${value}T12:00:00`).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric"
+  });
+}
+
+function renderSparkline(points) {
+  if (!points.length) {
+    return '<div class="empty">No bankroll sessions yet.</div>';
+  }
+
+  const values = points.map((point) => point.cumulativeProfit);
+  const min = Math.min(0, ...values);
+  const max = Math.max(0, ...values);
+  const span = Math.max(1, max - min);
+  const width = 640;
+  const height = 240;
+  const padding = 28;
+  const plotWidth = width - padding * 2;
+  const plotHeight = height - padding * 2;
+  const coordinates = points.map((point, index) => {
+    const x = padding + (points.length === 1 ? plotWidth : (index / (points.length - 1)) * plotWidth);
+    const y = padding + plotHeight - ((point.cumulativeProfit - min) / span) * plotHeight;
+    return {
+      x,
+      y,
+      point
+    };
+  });
+  const zeroY = padding + plotHeight - ((0 - min) / span) * plotHeight;
+  const path = coordinates.map((entry) => `${entry.x},${entry.y}`).join(" ");
+
+  return `
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Bankroll curve">
+      <line class="zero-line" x1="${padding}" y1="${zeroY}" x2="${width - padding}" y2="${zeroY}"></line>
+      <polyline class="bankroll-line" points="${path}"></polyline>
+      ${coordinates
+        .map(
+          ({ x, y, point }) => `
+            <circle class="bankroll-point ${point.profit >= 0 ? "win" : "loss"}" cx="${x}" cy="${y}" r="5">
+              <title>${escapeHtml(point.date)} ${formatCurrency(point.cumulativeProfit, { signed: true })}</title>
+            </circle>
+          `
+        )
+        .join("")}
+    </svg>
+    <div class="chart-axis">
+      <span>${escapeHtml(formatDate(points[0].date))}</span>
+      <strong>${formatCurrency(points.at(-1).cumulativeProfit, { signed: true })}</strong>
+      <span>${escapeHtml(formatDate(points.at(-1).date))}</span>
+    </div>
+  `;
+}
+
 function renderMetrics() {
   const handCount = state.hands.length;
   const avgVpip =
@@ -209,6 +314,16 @@ function renderMetrics() {
   elements.metrics.players.textContent = state.players.length;
   elements.metrics.vpip.textContent = `${avgVpip.toFixed(1)}%`;
   elements.metrics.leaks.textContent = state.leaks.length;
+  elements.metrics.profit.textContent = formatCurrency(state.bankrollSummary.totalProfit, {
+    compact: true,
+    signed: true
+  });
+  elements.metrics.sessions.textContent = state.bankrollSummary.sessionCount;
+  elements.metrics.hourly.textContent = `${formatCurrency(state.bankrollSummary.hourlyRate, {
+    compact: true,
+    signed: true
+  })}/hr`;
+  elements.metrics.bbhr.textContent = formatNumber(state.bankrollSummary.bbPerHour, 1);
 }
 
 function renderPlayerOptions() {
@@ -329,6 +444,36 @@ function renderCharts() {
     .join("");
 }
 
+function renderBankrollCharts() {
+  elements.bankrollChart.innerHTML = renderSparkline(state.bankrollSummary.points ?? []);
+
+  const locations = state.bankrollSummary.byLocation ?? [];
+  const maxProfit = Math.max(1, ...locations.map((item) => Math.abs(item.profit)));
+
+  if (locations.length === 0) {
+    elements.locationChart.innerHTML = '<div class="empty">Add sessions to compare locations.</div>';
+    return;
+  }
+
+  elements.locationChart.innerHTML = locations
+    .map((item) => {
+      const width = Math.max(6, (Math.abs(item.profit) / maxProfit) * 100);
+      return `
+        <div class="chart-row-item compact">
+          <div class="chart-label">
+            <strong>${escapeHtml(item.label)}</strong>
+            <span>${item.sessions} sessions / ${formatNumber(item.hours, 1)}h</span>
+          </div>
+          <div class="single-bar ${item.profit >= 0 ? "positive" : "negative"}">
+            <span style="width: ${width}%"></span>
+          </div>
+          <div class="chart-values">${formatCurrency(item.profit, { signed: true })} / ${formatNumber(item.bbPerHour, 1)} bb/hr</div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
 function renderLeaks() {
   if (state.leaks.length === 0) {
     elements.leakList.innerHTML = '<div class="empty">No review signals yet.</div>';
@@ -344,6 +489,59 @@ function renderLeaks() {
             <span class="pill">${escapeHtml(leak.player)}</span>
           </div>
           <p>${escapeHtml(leak.detail)}</p>
+        </article>
+      `
+    )
+    .join("");
+}
+
+function renderSessionSummary() {
+  const summary = state.bankrollSummary;
+
+  elements.sessionSummary.innerHTML = `
+    <div class="session-kpis">
+      <div>
+        <span class="subtle">Profit</span>
+        <strong>${formatCurrency(summary.totalProfit, { signed: true })}</strong>
+      </div>
+      <div>
+        <span class="subtle">Hours</span>
+        <strong>${formatNumber(summary.totalHours, 1)}</strong>
+      </div>
+      <div>
+        <span class="subtle">Win rate</span>
+        <strong>${formatNumber(summary.winRate, 1)}%</strong>
+      </div>
+      <div>
+        <span class="subtle">BB/hr</span>
+        <strong>${formatNumber(summary.bbPerHour, 1)}</strong>
+      </div>
+    </div>
+  `;
+}
+
+function renderSessions() {
+  renderSessionSummary();
+
+  if (state.bankrollSessions.length === 0) {
+    elements.sessionList.innerHTML = '<div class="empty">No bankroll sessions yet.</div>';
+    return;
+  }
+
+  elements.sessionList.innerHTML = state.bankrollSessions
+    .map(
+      (session) => `
+        <article class="session-row">
+          <div>
+            <div class="session-row-title">
+              <strong>${escapeHtml(session.location)}</strong>
+              <span class="pill">${escapeHtml(session.stakes || session.gameType)}</span>
+            </div>
+            <p>${escapeHtml(formatDate(session.date))} / ${escapeHtml(session.gameType)} / ${formatNumber(session.hours, 1)}h</p>
+            <p>${formatCurrency(session.profit, { signed: true })} / ${formatNumber(session.bbPerHour, 1)} bb/hr / ${formatCurrency(session.hourlyRate, { signed: true })}/hr</p>
+            ${session.notes ? `<p>${escapeHtml(session.notes)}</p>` : ""}
+          </div>
+          <button class="button danger" type="button" data-delete-bankroll-session="${escapeHtml(session.id)}">Delete</button>
         </article>
       `
     )
@@ -384,6 +582,105 @@ function renderHands() {
     .join("");
 }
 
+function replaySteps(hand) {
+  return [
+    {
+      street: "hole-cards",
+      action: null
+    },
+    ...hand.actions.map((action) => ({
+      street: action.street,
+      action
+    }))
+  ];
+}
+
+function boardForStreet(hand, street) {
+  const index = streetOrder.indexOf(street);
+
+  if (index <= streetOrder.indexOf("hole-cards")) {
+    return [];
+  }
+
+  if (street === "flop") {
+    return hand.board.slice(0, 3);
+  }
+
+  if (street === "turn") {
+    return hand.board.slice(0, 4);
+  }
+
+  return hand.board.slice(0, 5);
+}
+
+function foldedPlayersAt(hand, stepIndex) {
+  return new Set(
+    hand.actions
+      .slice(0, Math.max(0, stepIndex))
+      .filter((action) => action.type === "folds")
+      .map((action) => action.player)
+  );
+}
+
+function trackedPotAt(hand, stepIndex) {
+  return hand.actions
+    .slice(0, Math.max(0, stepIndex))
+    .reduce((sum, action) => sum + (Number(action.amount) || 0), 0);
+}
+
+function renderReplayer(hand, steps) {
+  const step = steps[state.replayStep] ?? steps[0];
+  const activePlayer = step.action?.player ?? null;
+  const visibleBoard = boardForStreet(hand, step.street);
+  const foldedPlayers = foldedPlayersAt(hand, state.replayStep);
+  const trackedPot = trackedPotAt(hand, state.replayStep);
+  const heroCards = hand.hero ? hand.holeCards[hand.hero] : [];
+  const actionText = step.action
+    ? formatAction(step.action)
+    : `Hand #${escapeHtml(hand.handNumber)} ready`;
+  const seats = hand.players
+    .map((player, index) => {
+      const isHero = player.name === hand.hero;
+      const isActive = player.name === activePlayer;
+      const isFolded = foldedPlayers.has(player.name);
+      const cards = isHero ? heroCards : ["??", "??"];
+
+      return `
+        <div class="replay-seat seat-pos-${index % 6} ${isActive ? "active" : ""} ${isFolded ? "folded" : ""}">
+          <span>${escapeHtml(player.position ?? `Seat ${player.seat}`)}</span>
+          <strong>${escapeHtml(player.name)}</strong>
+          <small>${Number(player.stack).toFixed(2)}</small>
+          <div class="mini-cards">${cards.map((card) => `<em class="${cardClass(card)}">${escapeHtml(card)}</em>`).join("")}</div>
+        </div>
+      `;
+    })
+    .join("");
+
+  return `
+    <section class="replayer">
+      <div class="replay-table">
+        ${seats}
+        <div class="board-zone">
+          <span class="subtle">${escapeHtml(streetLabels[step.street] ?? step.street)}</span>
+          ${renderCards(visibleBoard)}
+          <strong>${formatCurrency(trackedPot)}</strong>
+          <small>tracked pot</small>
+        </div>
+      </div>
+      <div class="replay-controls">
+        <button class="button secondary" type="button" data-replay="start">Start</button>
+        <button class="button secondary" type="button" data-replay="prev">Prev</button>
+        <div class="replay-action">
+          <strong>${actionText}</strong>
+          <span>${state.replayStep + 1} / ${steps.length}</span>
+        </div>
+        <button class="button secondary" type="button" data-replay="next">Next</button>
+        <button class="button secondary" type="button" data-replay="end">End</button>
+      </div>
+    </section>
+  `;
+}
+
 function renderHandDetail() {
   const hand = state.hands.find((item) => item.id === state.selectedHandId);
 
@@ -393,6 +690,8 @@ function renderHandDetail() {
   }
 
   const heroCards = hand.hero ? hand.holeCards[hand.hero] : [];
+  const steps = replaySteps(hand);
+  state.replayStep = Math.max(0, Math.min(state.replayStep, steps.length - 1));
   const actionGroups = new Map(streetOrder.map((street) => [street, []]));
 
   for (const action of hand.actions) {
@@ -439,7 +738,7 @@ function renderHandDetail() {
         <strong>${escapeHtml(hand.hero ?? "Unknown")}</strong>
       </div>
     </article>
-    ${renderCards([...heroCards, ...hand.board])}
+    ${renderReplayer(hand, steps)}
     <ul class="seat-list">${seats}</ul>
     <div class="street-list">${streets || '<div class="empty">No actions parsed for this hand.</div>'}</div>
   `;
@@ -480,17 +779,21 @@ function render() {
 
   if (state.selectedHandId && !state.hands.some((hand) => hand.id === state.selectedHandId)) {
     state.selectedHandId = null;
+    state.replayStep = 0;
   }
 
   if (!state.selectedHandId && state.hands.length > 0) {
     state.selectedHandId = state.hands[0].id;
+    state.replayStep = 0;
   }
 
   renderMetrics();
   renderPlayerOptions();
   renderPlayerStats();
   renderCharts();
+  renderBankrollCharts();
   renderLeaks();
+  renderSessions();
   renderHands();
   renderHandDetail();
   renderImports();
@@ -504,17 +807,28 @@ async function refresh({ quiet = false } = {}) {
     return;
   }
 
-  const [handsPayload, importsPayload, statsPayload, leaksPayload] = await Promise.all([
+  const [
+    handsPayload,
+    importsPayload,
+    statsPayload,
+    leaksPayload,
+    bankrollSessionsPayload,
+    bankrollSummaryPayload
+  ] = await Promise.all([
     api("/api/hands?limit=500"),
     api("/api/imports"),
     api("/api/stats/summary"),
-    api("/api/leaks")
+    api("/api/leaks"),
+    api("/api/bankroll/sessions"),
+    api("/api/bankroll/summary")
   ]);
 
   state.hands = handsPayload.hands;
   state.imports = importsPayload.imports;
   state.players = statsPayload.players;
   state.leaks = leaksPayload.leaks;
+  state.bankrollSessions = bankrollSessionsPayload.sessions;
+  state.bankrollSummary = bankrollSummaryPayload.summary;
   render();
 
   if (!quiet) {
@@ -588,7 +902,34 @@ elements.handList.addEventListener("click", (event) => {
   }
 
   state.selectedHandId = target.dataset.handId;
+  state.replayStep = 0;
   renderHands();
+  renderHandDetail();
+});
+
+elements.handDetail.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-replay]");
+  if (!target) {
+    return;
+  }
+
+  const hand = state.hands.find((item) => item.id === state.selectedHandId);
+  if (!hand) {
+    return;
+  }
+
+  const steps = replaySteps(hand);
+  const action = target.dataset.replay;
+  if (action === "start") {
+    state.replayStep = 0;
+  } else if (action === "prev") {
+    state.replayStep = Math.max(0, state.replayStep - 1);
+  } else if (action === "next") {
+    state.replayStep = Math.min(steps.length - 1, state.replayStep + 1);
+  } else if (action === "end") {
+    state.replayStep = steps.length - 1;
+  }
+
   renderHandDetail();
 });
 
@@ -629,6 +970,51 @@ elements.historyFile.addEventListener("change", async (event) => {
 elements.clearImportText.addEventListener("click", () => {
   elements.importForm.elements.rawText.value = "";
   elements.historyFile.value = "";
+});
+
+elements.bankrollForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+
+  try {
+    const payload = await api("/api/bankroll/sessions", {
+      method: "POST",
+      body: {
+        date: form.get("date"),
+        location: form.get("location"),
+        gameType: form.get("gameType"),
+        stakes: form.get("stakes"),
+        tableSize: form.get("tableSize"),
+        hours: form.get("hours"),
+        buyIn: form.get("buyIn"),
+        cashOut: form.get("cashOut"),
+        profit: form.get("profit"),
+        bigBlind: form.get("bigBlind"),
+        notes: form.get("notes")
+      }
+    });
+    await refresh();
+    showToast(`Added ${formatCurrency(payload.session.profit, { signed: true })} session.`);
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
+elements.sessionList.addEventListener("click", async (event) => {
+  const target = event.target.closest("[data-delete-bankroll-session]");
+  if (!target || !window.confirm("Delete this bankroll session?")) {
+    return;
+  }
+
+  try {
+    const payload = await api(`/api/bankroll/sessions/${encodeURIComponent(target.dataset.deleteBankrollSession)}`, {
+      method: "DELETE"
+    });
+    await refresh();
+    showToast(`Deleted ${formatCurrency(payload.session.profit, { signed: true })} session.`);
+  } catch (error) {
+    showToast(error.message);
+  }
 });
 
 elements.importForm.addEventListener("submit", async (event) => {
@@ -695,6 +1081,10 @@ elements.signOut.addEventListener("click", () => {
 });
 
 async function boot() {
+  if (elements.bankrollForm?.elements.date) {
+    elements.bankrollForm.elements.date.value = new Date().toISOString().slice(0, 10);
+  }
+
   try {
     await auth.finishRedirect();
   } catch (error) {
