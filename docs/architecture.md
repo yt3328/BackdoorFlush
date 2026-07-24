@@ -4,7 +4,11 @@ The local app is intentionally small, but the module boundaries line up with a c
 
 ```mermaid
 flowchart LR
-  Browser["Dashboard"] --> API["API Gateway"]
+  Browser["Dashboard"] --> CloudFront["CloudFront"]
+  CloudFront --> FrontendS3["S3 frontend bucket"]
+  Browser --> Cognito["Cognito Hosted UI"]
+  Browser --> API["API Gateway"]
+  Cognito --> API
   API --> ImportLambda["Import Lambda"]
   API --> ReadLambda["Read Lambda"]
   API --> EquityLambda["Equity Lambda"]
@@ -25,12 +29,14 @@ flowchart LR
 ## AWS Version
 
 - S3 stores raw hand-history uploads.
+- CloudFront serves the static dashboard from a private S3 bucket.
+- Cognito signs users in through the Hosted UI.
 - API Gateway fronts the public API.
+- API Gateway validates Cognito JWTs before private routes reach Lambda.
 - Lambda handles imports, reads, stats, and equity checks.
 - SQS buffers parse jobs so large uploads do not block requests.
-- DynamoDB stores parsed hand records keyed by user/session.
+- DynamoDB stores parsed hand records keyed by the signed-in user's Cognito subject.
 - CloudWatch alarms track API and parse worker errors.
-- Cognito can be added later for user-owned data.
 - SageMaker can be added later for recommendation or clustering work.
 
 ## Data Shape
@@ -51,6 +57,6 @@ Parsed hands should eventually include:
 - `winnings`
 - `createdAt`
 
-## Version 0.3 Boundaries
+## Version 0.4 Boundaries
 
-The cloud backend is designed to be deployed with SAM, but the browser dashboard still runs locally by default. To point the local frontend at a deployed backend, set `public/config.js` to the API Gateway output URL.
+The cloud backend and frontend host are deployed with SAM. The dashboard files are still plain static assets, so publishing the frontend is a separate `aws s3 sync` step after the stack is updated and `public/config.js` contains the API and Cognito outputs.

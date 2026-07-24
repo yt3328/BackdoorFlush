@@ -4,7 +4,7 @@ PokerFeltScope is a small hand-history desk for reviewing poker sessions.
 
 The local app lets you upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, and run quick equity checks.
 
-Version 0.3 also adds the AWS backend shape: API Gateway, Lambda, S3 raw uploads, SQS parse jobs, DynamoDB storage, and CloudWatch alarms through an AWS SAM template.
+Version 0.4 adds the first real cloud boundary: Cognito sign-in, private per-user API access, and a CloudFront/S3 frontend target in the AWS SAM template.
 
 ## Run it
 
@@ -37,11 +37,15 @@ Local mode:
 
 AWS mode:
 
+- Creates a Cognito user pool and web app client for account sign-in.
+- Protects cloud API routes with an API Gateway JWT authorizer.
+- Uses the signed-in Cognito subject as the DynamoDB partition key for each user.
 - Queues uploaded hand histories through an API Lambda.
 - Stores raw text in S3.
 - Parses uploads asynchronously from SQS.
 - Writes imports and parsed hands to DynamoDB.
 - Exposes the same core stats/equity behavior through Lambda handlers.
+- Hosts the static dashboard from a private S3 bucket through CloudFront.
 
 ## API
 
@@ -75,6 +79,7 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 - `src/http/apiServer.js` exposes the local API and serves the dashboard.
 - `src/storage/handStore.js` keeps local state.
 - `src/aws/` contains Lambda handlers and AWS data adapters.
+- `public/auth.js` handles Cognito Hosted UI sign-in with PKCE.
 - `infra/template.yaml` is the AWS SAM backend template.
 - `samples/` has a small hand-history file for local testing.
 - `docs/aws-setup.md` covers safe account setup.
@@ -82,8 +87,6 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 
 ## Next
 
-- Add Cognito login so users have private cloud data.
-- Host the frontend as a real public website.
 - Support more hand-history formats and larger real-world exports.
-- Add bankroll tracking and richer session-level graphs.
+- Add session and bankroll tracking.
 - Replace the first-pass review rules with a larger recommendation engine.

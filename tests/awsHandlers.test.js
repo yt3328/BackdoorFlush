@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { equity, leaks, parseImport, api } from "../src/aws/lambdaHandlers.js";
+import { userIdFromEvent } from "../src/aws/http.js";
 
 const sample = readFileSync(new URL("../samples/pokerstars-small.txt", import.meta.url), "utf8");
 
@@ -73,4 +74,35 @@ test("API Lambda strips HTTP API stage prefix from routes", async () => {
 
   assert.equal(response.statusCode, 200);
   assert.equal(payload.service, "poker-felt-scope");
+});
+
+test("AWS user id comes from Cognito JWT claims when present", () => {
+  const userId = userIdFromEvent({
+    requestContext: {
+      authorizer: {
+        jwt: {
+          claims: {
+            sub: "user-sub-123"
+          }
+        }
+      }
+    }
+  });
+
+  assert.equal(userId, "user-sub-123");
+});
+
+test("AWS user id rejects anonymous cloud requests when auth is required", () => {
+  const previousRequireAuth = process.env.REQUIRE_AUTH;
+  process.env.REQUIRE_AUTH = "true";
+
+  try {
+    assert.throws(() => userIdFromEvent({}), /Sign in to continue/);
+  } finally {
+    if (previousRequireAuth === undefined) {
+      delete process.env.REQUIRE_AUTH;
+    } else {
+      process.env.REQUIRE_AUTH = previousRequireAuth;
+    }
+  }
 });

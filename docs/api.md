@@ -2,6 +2,12 @@
 
 The local server exposes a small JSON API under `/api`.
 
+In AWS mode, all `/api/*` routes except `GET /api/health` require a Cognito bearer token. The dashboard gets this token after sign-in and sends it as:
+
+```http
+Authorization: Bearer <id-token>
+```
+
 ## Health
 
 ```http

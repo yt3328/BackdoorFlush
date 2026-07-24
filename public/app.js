@@ -1,3 +1,5 @@
+import { createAuthClient } from "./auth.js";
+
 const positionOrder = ["BTN", "CO", "HJ", "LJ", "MP", "UTG+1", "UTG", "SB", "BB", "Unknown"];
 const streetOrder = ["hole-cards", "flop", "turn", "river", "show-down"];
 const streetLabels = {
@@ -14,15 +16,21 @@ const state = {
   imports: [],
   players: [],
   leaks: [],
-  selectedHandId: null
+  selectedHandId: null,
+  importPollTimer: null
 };
 
 const apiBase = window.POKER_FELT_SCOPE_API_BASE ?? "";
+const auth = createAuthClient(window.POKER_FELT_SCOPE_AUTH);
 
 const elements = {
   title: document.querySelector("#page-title"),
   navButtons: [...document.querySelectorAll(".nav-button")],
   views: [...document.querySelectorAll(".view")],
+  authStatus: document.querySelector("#auth-status"),
+  signIn: document.querySelector("#sign-in"),
+  signOut: document.querySelector("#sign-out"),
+  authNotice: document.querySelector("#auth-notice"),
   loadDemo: document.querySelector("#load-demo"),
   clearSession: document.querySelector("#clear-session"),
   refresh: document.querySelector("#refresh"),
@@ -51,21 +59,94 @@ const elements = {
 };
 
 async function api(path, options = {}) {
+  const headers = {
+    "content-type": "application/json",
+    ...(options.headers ?? {})
+  };
+  const token = auth.token();
+
+  if (token) {
+    headers.authorization = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${apiBase}${path}`, {
-    headers: {
-      "content-type": "application/json"
-    },
     ...options,
+    headers,
     body: options.body ? JSON.stringify(options.body) : undefined
   });
 
-  const payload = await response.json();
+  const text = await response.text();
+  let payload = {};
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = {
+        error: {
+          message: text
+        }
+      };
+    }
+  }
 
   if (!response.ok) {
+    if ((response.status === 401 || response.status === 403) && auth.enabled) {
+      auth.clear();
+      renderAuthState();
+    }
+
     throw new Error(payload.error?.message ?? "Request failed.");
   }
 
   return payload;
+}
+
+function canUsePrivateApi() {
+  return !auth.enabled || auth.isSignedIn();
+}
+
+function clearDashboardData() {
+  state.hands = [];
+  state.imports = [];
+  state.players = [];
+  state.leaks = [];
+  state.selectedHandId = null;
+}
+
+function renderAuthState() {
+  const signedIn = auth.isSignedIn();
+  const needsSignIn = auth.enabled && !signedIn;
+
+  elements.authStatus.textContent = auth.enabled
+    ? signedIn
+      ? auth.displayName()
+      : "Signed out"
+    : "Local mode";
+  elements.signIn.hidden = !auth.enabled || signedIn;
+  elements.signOut.hidden = !auth.enabled || !signedIn;
+  elements.authNotice.hidden = !needsSignIn;
+  document.body.classList.toggle("signed-out", needsSignIn);
+
+  for (const button of [elements.loadDemo, elements.clearSession, elements.refresh]) {
+    button.disabled = needsSignIn;
+  }
+}
+
+function syncImportPolling() {
+  if (state.importPollTimer) {
+    window.clearTimeout(state.importPollTimer);
+    state.importPollTimer = null;
+  }
+
+  const hasQueuedImport = state.imports.some((item) => item.status === "queued");
+  if (!hasQueuedImport || !canUsePrivateApi()) {
+    return;
+  }
+
+  state.importPollTimer = window.setTimeout(() => {
+    state.importPollTimer = null;
+    refresh({ quiet: true }).catch((error) => showToast(error.message));
+  }, 2500);
 }
 
 function showToast(message) {
@@ -371,22 +452,32 @@ function renderImports() {
   }
 
   elements.importList.innerHTML = state.imports
-    .map(
-      (item) => `
+    .map((item) => {
+      const status = item.status ?? "ready";
+      const statusLine =
+        status === "queued"
+          ? "Queued for parsing"
+          : status === "failed"
+            ? escapeHtml(item.errorMessage ?? "Parsing failed")
+            : `${item.handCount} new hands from ${escapeHtml(item.source)} on ${new Date(item.importedAt).toLocaleString()}`;
+
+      return `
         <article class="import-row">
           <div>
             <strong>${escapeHtml(item.name)}</strong>
-            <p>${item.handCount} new hands from ${escapeHtml(item.source)} on ${new Date(item.importedAt).toLocaleString()}</p>
+            <p><span class="status ${escapeHtml(status)}">${escapeHtml(status)}</span> ${statusLine}</p>
             <p>${item.skippedCount ?? 0} duplicate hands skipped</p>
           </div>
-          <button class="button danger" type="button" data-delete-import="${escapeHtml(item.id)}">Delete</button>
+          <button class="button danger" type="button" data-delete-import="${escapeHtml(item.id)}" ${status === "queued" ? "disabled" : ""}>Delete</button>
         </article>
-      `
-    )
+      `;
+    })
     .join("");
 }
 
 function render() {
+  renderAuthState();
+
   if (state.selectedHandId && !state.hands.some((hand) => hand.id === state.selectedHandId)) {
     state.selectedHandId = null;
   }
@@ -403,9 +494,16 @@ function render() {
   renderHands();
   renderHandDetail();
   renderImports();
+  syncImportPolling();
 }
 
-async function refresh() {
+async function refresh({ quiet = false } = {}) {
+  if (!canUsePrivateApi()) {
+    clearDashboardData();
+    render();
+    return;
+  }
+
   const [handsPayload, importsPayload, statsPayload, leaksPayload] = await Promise.all([
     api("/api/hands?limit=500"),
     api("/api/imports"),
@@ -418,6 +516,10 @@ async function refresh() {
   state.players = statsPayload.players;
   state.leaks = leaksPayload.leaks;
   render();
+
+  if (!quiet) {
+    renderAuthState();
+  }
 }
 
 function readSelectedFile(file) {
@@ -437,14 +539,20 @@ elements.loadDemo.addEventListener("click", async () => {
   try {
     const payload = await api("/api/demo", { method: "POST" });
     await refresh();
-    showToast(payload.duplicate ? "Sample was already loaded." : `Loaded ${payload.import.handCount} sample hands.`);
+    showToast(
+      payload.duplicate
+        ? "Sample was already loaded."
+        : payload.import.status === "queued"
+          ? "Sample queued for parsing."
+          : `Loaded ${payload.import.handCount} sample hands.`
+    );
   } catch (error) {
     showToast(error.message);
   }
 });
 
 elements.clearSession.addEventListener("click", async () => {
-  if (!window.confirm("Clear all imported hands from this local session?")) {
+  if (!window.confirm("Clear all imported hands from this workspace?")) {
     return;
   }
 
@@ -537,7 +645,13 @@ elements.importForm.addEventListener("submit", async (event) => {
       }
     });
     await refresh();
-    showToast(payload.duplicate ? "That session is already imported." : `Imported ${payload.import.handCount} hands.`);
+    showToast(
+      payload.duplicate
+        ? "That session is already imported."
+        : payload.import.status === "queued"
+          ? "Upload queued for parsing."
+          : `Imported ${payload.import.handCount} hands.`
+    );
   } catch (error) {
     showToast(error.message);
   }
@@ -570,4 +684,30 @@ elements.equityForm.addEventListener("submit", async (event) => {
   }
 });
 
-refresh().catch((error) => showToast(error.message));
+elements.signIn.addEventListener("click", () => {
+  auth.signIn().catch((error) => showToast(error.message));
+});
+
+elements.signOut.addEventListener("click", () => {
+  auth.signOut();
+  clearDashboardData();
+  render();
+});
+
+async function boot() {
+  try {
+    await auth.finishRedirect();
+  } catch (error) {
+    showToast(error.message);
+  }
+
+  if (canUsePrivateApi()) {
+    await refresh();
+    return;
+  }
+
+  clearDashboardData();
+  render();
+}
+
+boot().catch((error) => showToast(error.message));

@@ -1,18 +1,21 @@
 # Deployment
 
-Version 0.3 adds an AWS backend, but local mode still works with `npm start`.
+Version 0.4 adds cloud sign-in and static frontend hosting, but local mode still works with `npm start`.
 
 ## What Deploys
 
 The SAM template creates:
 
 - HTTP API Gateway
+- Cognito user pool, Hosted UI domain, and web app client
 - API Lambda for `/api/*`
 - SQS queue for parse jobs
 - Parse worker Lambda
 - S3 bucket for raw hand-history text
 - DynamoDB imports table
 - DynamoDB hands table
+- Private S3 bucket for the dashboard
+- CloudFront distribution for the dashboard
 - CloudWatch alarms for Lambda errors
 
 ## Prerequisites
@@ -49,22 +52,29 @@ AWS Region: us-east-1
 Parameter StageName: dev
 Parameter AllowedOrigin: *
 Parameter DefaultUserId: local-dev-user
+Parameter RequireAuth: true
 Confirm changes before deploy: Y
 Allow SAM CLI IAM role creation: Y
 Save arguments to configuration file: Y
 ```
 
-After deploy, SAM prints an `ApiUrl` output. Copy that value.
+After deploy, SAM prints outputs for the API, Cognito, S3, and CloudFront.
 
-## Point The Frontend At AWS
+## Configure The Frontend
 
-For local frontend testing against the deployed API, update `public/config.js`:
+Update `public/config.js` with the deployed stack outputs:
 
 ```js
 window.POKER_FELT_SCOPE_API_BASE = "https://your-api-id.execute-api.us-east-1.amazonaws.com/dev";
+window.POKER_FELT_SCOPE_AUTH = {
+  clientId: "your-cognito-user-pool-client-id",
+  hostedUiDomain: "https://your-cognito-domain.auth.us-east-1.amazoncognito.com",
+  redirectUri: window.location.origin,
+  logoutUri: window.location.origin
+};
 ```
 
-Then run:
+For local frontend testing against the deployed API, run:
 
 ```bash
 npm start
@@ -76,17 +86,45 @@ Open:
 http://localhost:3400
 ```
 
-## Later Static Hosting
+The Cognito app client allows both `http://localhost:3400` and the CloudFront URL as callback/logout URLs.
 
-The current frontend can be hosted separately with Amplify Hosting, S3 + CloudFront, or another static host. When hosted separately, set `public/config.js` to the deployed API URL before publishing the static files.
+## Publish The Dashboard
+
+Copy the static frontend files to the `FrontendBucketName` output:
+
+```bash
+aws s3 sync public/ s3://your-frontend-bucket-name --delete \
+  --profile poker-felt-scope \
+  --region us-east-1
+```
+
+Then refresh CloudFront using the `FrontendDistributionId` output:
+
+```bash
+aws cloudfront create-invalidation \
+  --distribution-id your-cloudfront-distribution-id \
+  --paths "/*" \
+  --profile poker-felt-scope
+```
+
+Open the `FrontendUrl` output. The first user can create an account through Cognito's Hosted UI and then return to the dashboard.
+
+## Protected API Calls
+
+In AWS mode, routes under `/api/*` require a Cognito ID token, except `GET /api/health`. The browser handles this after sign-in by sending:
+
+```http
+Authorization: Bearer <id-token>
+```
+
+Each signed-in user's Cognito `sub` becomes the DynamoDB `userId`, so different users do not share imported hands.
 
 ## Tear Down
 
 When you are done testing AWS, remove the stack:
 
 ```bash
-sam delete --stack-name poker-felt-scope-dev
+sam delete --stack-name poker-felt-scope-dev --profile poker-felt-scope --region us-east-1
 ```
 
 This prevents small idle charges from lingering.
-

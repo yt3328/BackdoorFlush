@@ -47,11 +47,21 @@
             <h2 id="page-title">Overview</h2>
           </div>
           <div class="toolbar">
+            <div class="account">
+              <span id="auth-status">Local mode</span>
+              <button id="sign-in" class="button secondary" type="button" hidden>Sign in</button>
+              <button id="sign-out" class="button ghost" type="button" hidden>Sign out</button>
+            </div>
             <button id="load-demo" class="button secondary" type="button">Load Sample</button>
             <button id="clear-session" class="button ghost" type="button">Clear Session</button>
             <button id="refresh" class="button" type="button">Refresh</button>
           </div>
         </header>
+
+        <section id="auth-notice" class="auth-notice" hidden>
+          <strong>Sign in to open your cloud workspace.</strong>
+          <span>Your imports, hands, and review queue stay tied to your account.</span>
+        </section>
 
         <section class="view active" id="view-overview">
           <div class="metrics">

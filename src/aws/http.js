@@ -12,6 +12,13 @@ export function jsonResponse(statusCode, body, headers = {}) {
   };
 }
 
+export class UnauthorizedError extends Error {
+  constructor(message = "Sign in to continue.") {
+    super(message);
+    this.name = "UnauthorizedError";
+  }
+}
+
 export function eventBody(event) {
   if (!event.body) {
     return {};
@@ -47,16 +54,37 @@ export function queryValue(event, key) {
   return event.queryStringParameters?.[key] ?? null;
 }
 
-export function userIdFromEvent(event) {
+export function jwtClaimsFromEvent(event) {
   return (
-    event.requestContext?.authorizer?.jwt?.claims?.sub ??
-    event.requestContext?.authorizer?.claims?.sub ??
-    process.env.DEFAULT_USER_ID ??
-    "local-dev-user"
+    event.requestContext?.authorizer?.jwt?.claims ??
+    event.requestContext?.authorizer?.claims ??
+    null
   );
 }
 
+export function userIdFromEvent(event) {
+  const userId = jwtClaimsFromEvent(event)?.sub;
+
+  if (userId) {
+    return userId;
+  }
+
+  if (process.env.REQUIRE_AUTH === "true") {
+    throw new UnauthorizedError();
+  }
+
+  return process.env.DEFAULT_USER_ID ?? "local-dev-user";
+}
+
 export function handleError(error) {
+  if (error instanceof UnauthorizedError) {
+    return jsonResponse(401, {
+      error: {
+        message: error.message
+      }
+    });
+  }
+
   const badRequest =
     error instanceof SyntaxError ||
     error.message.includes("Invalid") ||

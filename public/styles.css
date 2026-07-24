@@ -222,6 +222,27 @@ button {
   justify-content: flex-end;
 }
 
+.account {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.58);
+  padding: 4px 4px 4px 12px;
+}
+
+.account span {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .button {
   border: 1px solid var(--felt-dark);
   border-radius: 8px;
@@ -230,6 +251,11 @@ button {
   background: var(--felt-dark);
   color: white;
   font-weight: 700;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .button.secondary {
@@ -256,6 +282,38 @@ button {
 
 .view.active {
   display: block;
+}
+
+.auth-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid #d3b46e;
+  border-radius: 8px;
+  background: #fff8e7;
+  color: #4e3510;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.auth-notice[hidden] {
+  display: none;
+}
+
+.auth-notice strong,
+.auth-notice span {
+  display: block;
+}
+
+.auth-notice span {
+  color: #725523;
+  font-size: 0.9rem;
+}
+
+.signed-out .view {
+  opacity: 0.42;
+  pointer-events: none;
 }
 
 .metrics {
@@ -445,6 +503,34 @@ th {
   padding: 4px 10px;
   font-size: 0.78rem;
   font-weight: 800;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 999px;
+  background: #eef1ec;
+  color: var(--muted);
+  padding: 2px 9px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.status.ready {
+  background: #e5f3ed;
+  color: var(--felt-dark);
+}
+
+.status.queued {
+  background: #fff2cf;
+  color: #72500b;
+}
+
+.status.failed {
+  background: #fbe2de;
+  color: var(--clay);
 }
 
 .cards {
@@ -735,6 +821,24 @@ th {
   .topbar,
   .panel-head {
     align-items: stretch;
+    flex-direction: column;
+  }
+
+  .toolbar,
+  .account {
+    width: 100%;
+  }
+
+  .account {
+    justify-content: space-between;
+  }
+
+  .toolbar .button {
+    flex: 1 1 auto;
+  }
+
+  .auth-notice {
+    align-items: flex-start;
     flex-direction: column;
   }
 

@@ -12,6 +12,12 @@ Parameters:
   DefaultUserId:
     Type: String
     Default: local-dev-user
+  RequireAuth:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
 
 Globals:
   Function:
@@ -24,6 +30,7 @@ Globals:
       Variables:
         ALLOWED_ORIGIN: !Ref AllowedOrigin
         DEFAULT_USER_ID: !Ref DefaultUserId
+        REQUIRE_AUTH: !Ref RequireAuth
         IMPORTS_TABLE_NAME: !Ref ImportsTable
         HANDS_TABLE_NAME: !Ref HandsTable
         RAW_UPLOADS_BUCKET: !Ref RawUploadsBucket
@@ -34,6 +41,14 @@ Resources:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: !Ref StageName
+      Auth:
+        Authorizers:
+          CognitoAuthorizer:
+            IdentitySource: "$request.header.Authorization"
+            JwtConfiguration:
+              issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+              audience:
+                - !Ref UserPoolClient
       CorsConfiguration:
         AllowHeaders:
           - content-type
@@ -45,6 +60,140 @@ Resources:
           - OPTIONS
         AllowOrigins:
           - !Ref AllowedOrigin
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "${AWS::StackName}-users"
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub "${AWS::StackName}-${AWS::AccountId}"
+      UserPoolId: !Ref UserPool
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: poker-felt-scope-web
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      PreventUserExistenceErrors: ENABLED
+      SupportedIdentityProviders:
+        - COGNITO
+      CallbackURLs:
+        - http://localhost:3400
+        - !Sub "https://${FrontendDistribution.DomainName}"
+      LogoutURLs:
+        - http://localhost:3400
+        - !Sub "https://${FrontendDistribution.DomainName}"
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  FrontendOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-frontend-oac"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  FrontendDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: FrontendS3Origin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !Ref FrontendOriginAccessControl
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: FrontendS3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${FrontendBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}"
 
   RawUploadsBucket:
     Type: AWS::S3::Bucket
@@ -148,12 +297,20 @@ Resources:
         - SQSSendMessagePolicy:
             QueueName: !GetAtt ParseQueue.QueueName
       Events:
+        Health:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PokerFeltScopeApi
+            Path: /api/health
+            Method: GET
         ApiProxy:
           Type: HttpApi
           Properties:
             ApiId: !Ref PokerFeltScopeApi
             Path: /api/{proxy+}
             Method: ANY
+            Auth:
+              Authorizer: CognitoAuthorizer
 
   ParseWorkerFunction:
     Type: AWS::Serverless::Function
@@ -212,6 +369,27 @@ Outputs:
   ApiUrl:
     Description: HTTP API endpoint
     Value: !Sub "https://${PokerFeltScopeApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
+  FrontendUrl:
+    Description: CloudFront URL for the dashboard
+    Value: !Sub "https://${FrontendDistribution.DomainName}"
+  FrontendBucketName:
+    Description: S3 bucket for the static dashboard files
+    Value: !Ref FrontendBucket
+  FrontendDistributionId:
+    Description: CloudFront distribution ID for cache invalidations
+    Value: !Ref FrontendDistribution
+  CognitoUserPoolId:
+    Description: Cognito user pool ID
+    Value: !Ref UserPool
+  CognitoUserPoolClientId:
+    Description: Cognito app client ID
+    Value: !Ref UserPoolClient
+  CognitoHostedUiDomain:
+    Description: Cognito Hosted UI domain
+    Value: !Sub "https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com"
+  CognitoIssuer:
+    Description: JWT issuer for API Gateway
+    Value: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
   RawUploadsBucketName:
     Description: S3 bucket for raw hand-history uploads
     Value: !Ref RawUploadsBucket
@@ -224,4 +402,3 @@ Outputs:
   ParseQueueUrl:
     Description: SQS queue for parsing jobs
     Value: !Ref ParseQueue
-
