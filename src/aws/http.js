@@ -29,7 +29,18 @@ export function httpMethod(event) {
 }
 
 export function httpPath(event) {
-  return event.rawPath ?? event.path ?? "/";
+  const rawPath = event.rawPath ?? event.path ?? "/";
+  const stage = event.requestContext?.stage;
+
+  if (stage && stage !== "$default" && rawPath === `/${stage}`) {
+    return "/";
+  }
+
+  if (stage && stage !== "$default" && rawPath.startsWith(`/${stage}/`)) {
+    return rawPath.slice(stage.length + 1);
+  }
+
+  return rawPath;
 }
 
 export function queryValue(event, key) {
@@ -61,4 +72,3 @@ export function handleError(error) {
     }
   });
 }
-

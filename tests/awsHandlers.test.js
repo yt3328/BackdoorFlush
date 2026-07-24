@@ -59,3 +59,18 @@ test("API Lambda health route does not need AWS clients", async () => {
   assert.equal(payload.runtime, "aws-lambda");
 });
 
+test("API Lambda strips HTTP API stage prefix from routes", async () => {
+  const response = await api({
+    rawPath: "/dev/api/health",
+    requestContext: {
+      stage: "dev",
+      http: {
+        method: "GET"
+      }
+    }
+  });
+  const payload = JSON.parse(response.body);
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(payload.service, "poker-felt-scope");
+});
