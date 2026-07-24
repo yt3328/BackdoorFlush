@@ -1,0 +1,20 @@
+{
+  "name": "poker-felt-scope",
+  "version": "0.1.0",
+  "description": "A small poker hand history analyzer.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "FELTSCOPE_PORT=3400 node src/server.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "keywords": [
+    "poker",
+    "analytics",
+    "hand-history"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

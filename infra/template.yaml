@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: PokerFeltScope API skeleton
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 12
+    MemorySize: 256
+    Architectures:
+      - arm64
+
+Resources:
+  PokerFeltScopeApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowHeaders:
+          - content-type
+          - authorization
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowOrigins:
+          - "*"
+
+  RawUploadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  ParseQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 60
+
+  HandsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: handId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: handId
+          KeyType: RANGE
+
+  ParseImportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: src/aws/lambdaHandlers.parseImport
+      Events:
+        ParseImport:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PokerFeltScopeApi
+            Path: /api/imports/parse
+            Method: POST
+
+  EquityFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: src/aws/lambdaHandlers.equity
+      Events:
+        Equity:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PokerFeltScopeApi
+            Path: /api/equity/calculate
+            Method: POST
+
+  LeaksFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: src/aws/lambdaHandlers.leaks
+      Events:
+        Leaks:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PokerFeltScopeApi
+            Path: /api/leaks
+            Method: POST
+
+Outputs:
+  ApiUrl:
+    Description: HTTP API endpoint
+    Value: !Sub "https://${PokerFeltScopeApi}.execute-api.${AWS::Region}.amazonaws.com"

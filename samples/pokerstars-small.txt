@@ -1,0 +1,153 @@
+PokerStars Hand #240001111111: Hold'em No Limit ($0.05/$0.10 USD) - 2026/07/19 20:14:21 ET
+Table 'Juniper' 6-max Seat #3 is the button
+Seat 1: Nora (14.20 in chips)
+Seat 2: Eli (9.80 in chips)
+Seat 3: Tao (12.35 in chips)
+Seat 4: Maya (10.00 in chips)
+Seat 5: Chris (11.45 in chips)
+Seat 6: Dev (8.75 in chips)
+*** HOLE CARDS ***
+Dealt to Tao [Ah Kh]
+Maya: folds
+Chris: calls 0.10
+Dev: folds
+Nora: raises 0.30 to 0.40
+Eli: folds
+Tao: raises 1.00 to 1.40
+Chris: calls 1.30
+Nora: calls 1.00
+*** FLOP *** [As 9h 4c]
+Chris: checks
+Nora: checks
+Tao: bets 1.80
+Chris: folds
+Nora: calls 1.80
+*** TURN *** [As 9h 4c] [2d]
+Nora: checks
+Tao: bets 4.25
+Nora: folds
+Tao collected 8.40 from pot
+*** SUMMARY ***
+Total pot 8.40
+
+PokerStars Hand #240001111112: Hold'em No Limit ($0.05/$0.10 USD) - 2026/07/19 20:16:02 ET
+Table 'Juniper' 6-max Seat #4 is the button
+Seat 1: Nora (11.00 in chips)
+Seat 2: Eli (9.70 in chips)
+Seat 3: Tao (15.20 in chips)
+Seat 4: Maya (10.00 in chips)
+Seat 5: Chris (10.05 in chips)
+Seat 6: Dev (8.75 in chips)
+*** HOLE CARDS ***
+Dealt to Tao [8s 8d]
+Chris: folds
+Dev: raises 0.20 to 0.30
+Nora: folds
+Eli: calls 0.30
+Tao: calls 0.30
+Maya: folds
+*** FLOP *** [Qd 8c 3h]
+Dev: bets 0.55
+Eli: folds
+Tao: raises 1.25 to 1.80
+Dev: calls 1.25
+*** TURN *** [Qd 8c 3h] [Jh]
+Dev: checks
+Tao: bets 3.10
+Dev: calls 3.10
+*** RIVER *** [Qd 8c 3h Jh] [2s]
+Dev: checks
+Tao: bets 5.75
+Dev: calls 3.55
+Tao collected 17.85 from pot
+*** SUMMARY ***
+Total pot 17.85
+
+PokerStars Hand #240001111113: Hold'em No Limit ($0.05/$0.10 USD) - 2026/07/19 20:19:43 ET
+Table 'Juniper' 6-max Seat #5 is the button
+Seat 1: Nora (11.00 in chips)
+Seat 2: Eli (9.40 in chips)
+Seat 3: Tao (23.10 in chips)
+Seat 4: Maya (10.00 in chips)
+Seat 5: Chris (10.05 in chips)
+Seat 6: Dev (4.00 in chips)
+*** HOLE CARDS ***
+Dealt to Tao [Kc Qc]
+Dev: folds
+Nora: raises 0.20 to 0.30
+Eli: folds
+Tao: calls 0.30
+Maya: folds
+Chris: calls 0.20
+*** FLOP *** [Td 7c 2c]
+Chris: checks
+Nora: bets 0.55
+Tao: calls 0.55
+Chris: folds
+*** TURN *** [Td 7c 2c] [5h]
+Nora: bets 1.40
+Tao: folds
+Nora collected 2.40 from pot
+*** SUMMARY ***
+Total pot 2.40
+
+PokerStars Hand #240001111114: Hold'em No Limit ($0.05/$0.10 USD) - 2026/07/19 20:22:18 ET
+Table 'Juniper' 6-max Seat #6 is the button
+Seat 1: Nora (12.10 in chips)
+Seat 2: Eli (9.30 in chips)
+Seat 3: Tao (22.25 in chips)
+Seat 4: Maya (10.00 in chips)
+Seat 5: Chris (9.85 in chips)
+Seat 6: Dev (4.00 in chips)
+*** HOLE CARDS ***
+Dealt to Tao [Ad Js]
+Nora: folds
+Eli: folds
+Tao: raises 0.25 to 0.35
+Maya: calls 0.30
+Chris: folds
+Dev: calls 0.25
+*** FLOP *** [Jc 6s 6d]
+Maya: checks
+Dev: checks
+Tao: bets 0.55
+Maya: calls 0.55
+Dev: folds
+*** TURN *** [Jc 6s 6d] [9d]
+Maya: checks
+Tao: checks
+*** RIVER *** [Jc 6s 6d 9d] [7h]
+Maya: bets 1.35
+Tao: calls 1.35
+Maya collected 4.80 from pot
+*** SUMMARY ***
+Total pot 4.80
+
+PokerStars Hand #240001111115: Hold'em No Limit ($0.05/$0.10 USD) - 2026/07/19 20:26:12 ET
+Table 'Juniper' 6-max Seat #1 is the button
+Seat 1: Nora (16.65 in chips)
+Seat 2: Eli (9.30 in chips)
+Seat 3: Tao (20.00 in chips)
+Seat 4: Maya (12.95 in chips)
+Seat 5: Chris (9.85 in chips)
+Seat 6: Dev (3.65 in chips)
+*** HOLE CARDS ***
+Dealt to Tao [7h 6h]
+Eli: folds
+Tao: raises 0.25 to 0.35
+Maya: folds
+Chris: folds
+Dev: calls 0.30
+Nora: calls 0.25
+*** FLOP *** [9h 5h 2s]
+Dev: checks
+Nora: bets 0.70
+Tao: calls 0.70
+Dev: folds
+*** TURN *** [9h 5h 2s] [4c]
+Nora: bets 1.80
+Tao: raises 4.20 to 6.00
+Nora: folds
+Tao collected 6.10 from pot
+*** SUMMARY ***
+Total pot 6.10

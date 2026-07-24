@@ -1,0 +1,6 @@
+data/
+node_modules/
+.aws-sam/
+.DS_Store
+npm-debug.log*
+

@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PokerFeltScope</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="mark">FS</div>
+          <div>
+            <h1>PokerFeltScope</h1>
+            <p>hand review desk</p>
+          </div>
+        </div>
+
+        <nav class="nav" aria-label="Dashboard views">
+          <button class="nav-button active" data-view="overview">Overview</button>
+          <button class="nav-button" data-view="hands">Hands</button>
+          <button class="nav-button" data-view="equity">Equity</button>
+          <button class="nav-button" data-view="imports">Imports</button>
+        </nav>
+
+        <div class="felt-panel">
+          <div class="table-art" aria-hidden="true">
+            <span class="seat seat-1"></span>
+            <span class="seat seat-2"></span>
+            <span class="seat seat-3"></span>
+            <span class="seat seat-4"></span>
+            <span class="card-art">Ah</span>
+            <span class="card-art red">Kd</span>
+          </div>
+          <div class="mini-stat">
+            <span id="side-hands">0</span>
+            <small>hands loaded</small>
+          </div>
+        </div>
+      </aside>
+
+      <main class="content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Session</p>
+            <h2 id="page-title">Overview</h2>
+          </div>
+          <div class="toolbar">
+            <button id="load-demo" class="button secondary" type="button">Load Sample</button>
+            <button id="refresh" class="button" type="button">Refresh</button>
+          </div>
+        </header>
+
+        <section class="view active" id="view-overview">
+          <div class="metrics">
+            <article class="metric">
+              <span class="metric-label">Hands</span>
+              <strong id="metric-hands">0</strong>
+            </article>
+            <article class="metric">
+              <span class="metric-label">Players</span>
+              <strong id="metric-players">0</strong>
+            </article>
+            <article class="metric">
+              <span class="metric-label">Avg VPIP</span>
+              <strong id="metric-vpip">0%</strong>
+            </article>
+            <article class="metric">
+              <span class="metric-label">Signals</span>
+              <strong id="metric-leaks">0</strong>
+            </article>
+          </div>
+
+          <div class="split">
+            <section class="panel">
+              <div class="panel-head">
+                <h3>Players</h3>
+                <select id="player-filter" aria-label="Player filter">
+                  <option value="">All players</option>
+                </select>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Player</th>
+                      <th>Hands</th>
+                      <th>VPIP</th>
+                      <th>PFR</th>
+                      <th>3-bet</th>
+                      <th>AF</th>
+                    </tr>
+                  </thead>
+                  <tbody id="player-stats"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h3>Review Queue</h3>
+              </div>
+              <div id="leak-list" class="leak-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="view-hands">
+          <section class="panel">
+            <div class="panel-head">
+              <h3>Recent Hands</h3>
+              <input id="hand-player-filter" type="search" placeholder="Filter by player">
+            </div>
+            <div id="hand-list" class="hand-list"></div>
+          </section>
+        </section>
+
+        <section class="view" id="view-equity">
+          <div class="split">
+            <section class="panel">
+              <div class="panel-head">
+                <h3>Equity Check</h3>
+              </div>
+              <form id="equity-form" class="form">
+                <label>
+                  Hole cards
+                  <input name="holeCards" value="Ah Kh" autocomplete="off">
+                </label>
+                <label>
+                  Board
+                  <input name="boardCards" value="As 9h 4c" autocomplete="off">
+                </label>
+                <label>
+                  Opponents
+                  <input name="opponents" value="1" inputmode="numeric">
+                </label>
+                <label>
+                  Iterations
+                  <input name="iterations" value="1200" inputmode="numeric">
+                </label>
+                <button class="button" type="submit">Calculate</button>
+              </form>
+            </section>
+            <section class="panel result-panel">
+              <div class="panel-head">
+                <h3>Result</h3>
+              </div>
+              <div id="equity-result" class="equity-result">
+                <strong>--</strong>
+                <span>equity</span>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="view-imports">
+          <div class="split">
+            <section class="panel">
+              <div class="panel-head">
+                <h3>New Import</h3>
+              </div>
+              <form id="import-form" class="form">
+                <label>
+                  Name
+                  <input name="name" value="Local session">
+                </label>
+                <label>
+                  Source
+                  <input name="source" value="hand-history-text">
+                </label>
+                <label>
+                  Hand history text
+                  <textarea name="rawText" rows="14"></textarea>
+                </label>
+                <button class="button" type="submit">Import</button>
+              </form>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h3>Import Log</h3>
+              </div>
+              <div id="import-list" class="import-list"></div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
