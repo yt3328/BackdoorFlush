@@ -1,23 +1,11 @@
+import { buildReviewQueue, estimateHeroResult } from "./handReview.js";
 import { detectLeaks, summarizeHands } from "./stats.js";
+
+export { estimateHeroResult };
 
 function round(value, places = 2) {
   const factor = 10 ** places;
   return Math.round((Number(value) + Number.EPSILON) * factor) / factor;
-}
-
-function committedByPlayer(hand, player) {
-  return hand.actions
-    .filter((action) => action.player === player)
-    .reduce((sum, action) => sum + (Number(action.amount) || 0), 0);
-}
-
-export function estimateHeroResult(hand) {
-  const hero = hand.hero;
-  if (!hero) {
-    return 0;
-  }
-
-  return round((Number(hand.winnings?.[hero]) || 0) - committedByPlayer(hand, hero));
 }
 
 function publicHandSpot(hand) {
@@ -29,6 +17,9 @@ function publicHandSpot(hand) {
     hero: hand.hero,
     board: hand.board,
     heroCards: hand.hero ? hand.holeCards?.[hand.hero] ?? [] : [],
+    tags: hand.tags ?? [],
+    notes: hand.notes ?? "",
+    reviewedAt: hand.reviewedAt ?? null,
     estimatedHeroResult: estimateHeroResult(hand),
     winnerNames: Object.keys(hand.winnings ?? {})
   };
@@ -48,6 +39,9 @@ export function buildSessionDetail({ session, imports = [], hands = [] }) {
     hands,
     players,
     leaks: detectLeaks(players),
+    reviewQueue: buildReviewQueue(hands, {
+      limit: 8
+    }),
     totals: {
       importCount: imports.length,
       handCount: hands.length,

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { buildReviewQueue, normalizeReviewPatch } from "../core/handReview.js";
 import { handKey, hashText } from "../core/importIdentity.js";
 import { buildLiveHand } from "../core/liveHandBuilder.js";
 import { buildSessionDetail } from "../core/sessionInsights.js";
@@ -49,6 +50,9 @@ function publicHand(item) {
   const { userId, ...rest } = item;
   return {
     ...rest,
+    tags: Array.isArray(item.tags) ? item.tags : [],
+    notes: item.notes ?? "",
+    reviewedAt: item.reviewedAt ?? null,
     id: item.handId
   };
 }
@@ -312,6 +316,9 @@ export class CloudHandStore {
       id: undefined,
       importId,
       sessionId: linkedSessionId,
+      tags: Array.isArray(hand.tags) ? hand.tags : [],
+      notes: hand.notes ?? "",
+      reviewedAt: hand.reviewedAt ?? null,
       importedAt
     }));
 
@@ -422,6 +429,40 @@ export class CloudHandStore {
     }));
 
     return result.Item ? publicHand(result.Item) : null;
+  }
+
+  async updateHandReview(handId, payload) {
+    const { dynamo, sdk } = this.clients;
+    const existingHand = await this.getHand(handId);
+
+    if (!existingHand) {
+      throw new Error("Hand not found.");
+    }
+
+    const review = normalizeReviewPatch(payload, existingHand);
+    await dynamo.send(new sdk.UpdateCommand({
+      TableName: this.handsTable,
+      Key: {
+        userId: this.userId,
+        handId
+      },
+      UpdateExpression: "SET tags = :tags, notes = :notes, reviewedAt = :reviewedAt, reviewUpdatedAt = :reviewUpdatedAt",
+      ExpressionAttributeValues: {
+        ":tags": review.tags,
+        ":notes": review.notes,
+        ":reviewedAt": review.reviewedAt,
+        ":reviewUpdatedAt": review.reviewUpdatedAt
+      }
+    }));
+
+    return {
+      ...existingHand,
+      ...review
+    };
+  }
+
+  async reviewQueue(filters = {}) {
+    return buildReviewQueue(await this.listHands({ limit: 1000 }), filters);
   }
 
   async updateImportSession(importId, sessionId) {

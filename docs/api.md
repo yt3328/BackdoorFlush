@@ -66,9 +66,22 @@ Repeated calls do not duplicate the sample hands.
 ```http
 GET /api/hands?limit=100&player=Tao&position=BTN&sessionId=sess_...
 GET /api/hands/:id
+PATCH /api/hands/:id
 ```
 
 All query params are optional. `importId` can also be used to read hands from one upload.
+
+Update review metadata on a hand:
+
+```json
+{
+  "tags": ["river-decision", "bad-call"],
+  "notes": "Called river without blocking value.",
+  "reviewed": true
+}
+```
+
+Send `reviewed: false` to reopen a hand.
 
 ## Live Hands
 
@@ -125,14 +138,15 @@ GET /api/stats/summary?player=Tao
 
 Returns player-level hands, VPIP, PFR, 3-bet rate, aggression factor, and position splits.
 
-## Review Signals
+## Review
 
 ```http
 GET /api/leaks
 GET /api/leaks?player=Tao
+GET /api/review/spots?sessionId=sess_...&tag=river-decision&reviewed=false
 ```
 
-Returns rule-based notes for the current sample.
+`/api/leaks` returns rule-based player notes for the current sample. `/api/review/spots` returns ranked hands to review, using hand tags, notes, reviewed status, large pots, swings, and river decisions. All query params are optional.
 
 ## Session
 

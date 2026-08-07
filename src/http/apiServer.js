@@ -38,6 +38,10 @@ function bankrollSessionIdFromPath(pathname) {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+function reviewedParam(value) {
+  return value === "true" || value === "false" ? value : null;
+}
+
 async function createImport(request, response, store) {
   const payload = await readJsonBody(request);
   const rawText = payload.rawText;
@@ -164,6 +168,14 @@ export function createHttpServer({ store }) {
         return;
       }
 
+      if (handId && request.method === "PATCH") {
+        const payload = await readJsonBody(request);
+        sendJson(response, 200, {
+          hand: store.updateHandReview(handId, payload)
+        });
+        return;
+      }
+
       if (requestUrl.pathname === "/api/stats/summary") {
         if (!methodAllowed(request, response, "GET")) {
           return;
@@ -190,6 +202,22 @@ export function createHttpServer({ store }) {
 
         sendJson(response, 200, {
           leaks: detectLeaks(summary)
+        });
+        return;
+      }
+
+      if (requestUrl.pathname === "/api/review/spots") {
+        if (!methodAllowed(request, response, "GET")) {
+          return;
+        }
+
+        sendJson(response, 200, {
+          spots: store.reviewQueue({
+            limit: requestUrl.searchParams.get("limit"),
+            sessionId: requestUrl.searchParams.get("sessionId"),
+            tag: requestUrl.searchParams.get("tag"),
+            reviewed: reviewedParam(requestUrl.searchParams.get("reviewed"))
+          })
         });
         return;
       }

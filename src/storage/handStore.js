@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { mkdirSync } from "node:fs";
+import { buildReviewQueue, normalizeReviewPatch } from "../core/handReview.js";
 import { handKey, hashText } from "../core/importIdentity.js";
 import { buildLiveHand } from "../core/liveHandBuilder.js";
 import { buildSessionDetail } from "../core/sessionInsights.js";
@@ -34,6 +35,9 @@ export class HandStore {
       imports: Array.isArray(state.imports) ? state.imports : [],
       hands: Array.isArray(state.hands) ? state.hands.map((hand) => ({
         ...hand,
+        tags: Array.isArray(hand.tags) ? hand.tags : [],
+        notes: hand.notes ?? "",
+        reviewedAt: hand.reviewedAt ?? null,
         handKey: hand.handKey ?? handKey(hand)
       })) : [],
       bankrollSessions: Array.isArray(state.bankrollSessions) ? state.bankrollSessions : []
@@ -108,6 +112,9 @@ export class HandStore {
       id: createId("hand"),
       importId: importRecord.id,
       sessionId: importRecord.sessionId,
+      tags: Array.isArray(hand.tags) ? hand.tags : [],
+      notes: hand.notes ?? "",
+      reviewedAt: hand.reviewedAt ?? null,
       importedAt
     }));
 
@@ -172,6 +179,24 @@ export class HandStore {
 
   getHand(id) {
     return this.state.hands.find((hand) => hand.id === id) ?? null;
+  }
+
+  updateHandReview(id, payload) {
+    const existingHand = this.getHand(id);
+
+    if (!existingHand) {
+      throw new Error("Hand not found.");
+    }
+
+    const review = normalizeReviewPatch(payload, existingHand);
+    Object.assign(existingHand, review);
+    this.save();
+
+    return existingHand;
+  }
+
+  reviewQueue(filters = {}) {
+    return buildReviewQueue(this.listHands({ limit: 1000 }), filters);
   }
 
   updateImportSession(importId, sessionId) {

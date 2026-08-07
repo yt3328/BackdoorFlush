@@ -36,6 +36,10 @@ function bankrollSessionIdFromPath(pathname) {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+function reviewedParam(value) {
+  return value === "true" || value === "false" ? value : null;
+}
+
 async function createImportFromText({ store, payload }) {
   const result = await store.createQueuedImport({
     name: payload.name,
@@ -165,6 +169,12 @@ export async function api(event) {
       return jsonResponse(200, { hand });
     }
 
+    if (handId && method === "PATCH") {
+      return jsonResponse(200, {
+        hand: await store.updateHandReview(handId, eventBody(event))
+      });
+    }
+
     if (pathname === "/api/stats/summary" && method === "GET") {
       return jsonResponse(200, {
         players: summarizeHands(
@@ -182,6 +192,17 @@ export async function api(event) {
 
       return jsonResponse(200, {
         leaks: detectLeaks(summary)
+      });
+    }
+
+    if (pathname === "/api/review/spots" && method === "GET") {
+      return jsonResponse(200, {
+        spots: await store.reviewQueue({
+          limit: queryValue(event, "limit"),
+          sessionId: queryValue(event, "sessionId"),
+          tag: queryValue(event, "tag"),
+          reviewed: reviewedParam(queryValue(event, "reviewed"))
+        })
       });
     }
 

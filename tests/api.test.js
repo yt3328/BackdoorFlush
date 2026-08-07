@@ -394,6 +394,100 @@ test("live hand endpoint saves a manually entered hand into a bankroll session",
   assert.equal(detailPayload.biggestWins[0].id, livePayload.hand.id);
 });
 
+test("hand review metadata can be saved and queried through the review queue", async () => {
+  const sessionResponse = await dispatch({
+    method: "POST",
+    url: "/api/bankroll/sessions",
+    body: {
+      date: "2026-07-27",
+      location: "Live room",
+      stakes: "$2/$5",
+      hours: 4,
+      profit: -250
+    }
+  });
+  const session = (await sessionResponse.json()).session;
+  const liveResponse = await dispatch({
+    method: "POST",
+    url: "/api/live-hands",
+    body: {
+      sessionId: session.id,
+      tableName: "Table 4",
+      handNumber: "review-test-1",
+      hero: "Tao",
+      heroCards: "Qh Qd",
+      boardCards: "Js 8s 2c 6h 3d",
+      winner: "Villain",
+      wonAmount: 240,
+      players: [
+        {
+          seat: 1,
+          name: "Tao",
+          position: "CO",
+          stack: 800
+        },
+        {
+          seat: 2,
+          name: "Villain",
+          position: "BTN",
+          stack: 900
+        }
+      ],
+      actions: [
+        {
+          street: "hole-cards",
+          player: "Tao",
+          type: "raises",
+          amount: 20
+        },
+        {
+          street: "hole-cards",
+          player: "Villain",
+          type: "calls",
+          amount: 20
+        },
+        {
+          street: "river",
+          player: "Tao",
+          type: "calls",
+          amount: 90
+        }
+      ]
+    }
+  });
+  const livePayload = await liveResponse.json();
+  const patchResponse = await dispatch({
+    method: "PATCH",
+    url: `/api/hands/${livePayload.hand.id}`,
+    body: {
+      tags: ["river decision", "bad-call"],
+      notes: "Did not block value range.",
+      reviewed: true
+    }
+  });
+  const patchPayload = await patchResponse.json();
+  const handResponse = await dispatch({ url: `/api/hands/${livePayload.hand.id}` });
+  const handPayload = await handResponse.json();
+  const reviewedQueueResponse = await dispatch({
+    url: `/api/review/spots?sessionId=${encodeURIComponent(session.id)}&tag=river-decision&reviewed=true`
+  });
+  const reviewedQueuePayload = await reviewedQueueResponse.json();
+  const openQueueResponse = await dispatch({
+    url: `/api/review/spots?sessionId=${encodeURIComponent(session.id)}&reviewed=false`
+  });
+  const openQueuePayload = await openQueueResponse.json();
+
+  assert.equal(patchResponse.status, 200);
+  assert.deepEqual(patchPayload.hand.tags, ["river-decision", "bad-call"]);
+  assert.equal(patchPayload.hand.notes, "Did not block value range.");
+  assert.ok(patchPayload.hand.reviewedAt);
+  assert.deepEqual(handPayload.hand.tags, ["river-decision", "bad-call"]);
+  assert.equal(reviewedQueuePayload.spots.length, 1);
+  assert.equal(reviewedQueuePayload.spots[0].id, livePayload.hand.id);
+  assert.ok(reviewedQueuePayload.spots[0].reasons.includes("Tagged"));
+  assert.equal(openQueuePayload.spots.length, 0);
+});
+
 test("clearing imported hands preserves bankroll records", async () => {
   await dispatch({
     method: "POST",

@@ -17,6 +17,16 @@ const viewTitles = {
   equity: "Equity",
   imports: "Imports"
 };
+const suggestedReviewTags = [
+  "river-decision",
+  "bluff",
+  "value-bet",
+  "bad-call",
+  "3-bet-pot",
+  "multiway",
+  "all-in",
+  "live-hand"
+];
 
 const emptyBankrollSummary = {
   sessionCount: 0,
@@ -41,6 +51,7 @@ const state = {
   bankrollSummary: emptyBankrollSummary,
   players: [],
   leaks: [],
+  reviewSpots: [],
   selectedSessionId: null,
   selectedHandId: null,
   liveActions: [],
@@ -166,6 +177,7 @@ function clearDashboardData() {
   state.bankrollSummary = emptyBankrollSummary;
   state.players = [];
   state.leaks = [];
+  state.reviewSpots = [];
   state.selectedSessionId = null;
   state.selectedHandId = null;
   state.replayStep = 0;
@@ -317,6 +329,33 @@ function estimatedHeroResult(hand) {
   return Number(((Number(hand.winnings?.[hand.hero]) || 0) - committed).toFixed(2));
 }
 
+function handTags(hand) {
+  return Array.isArray(hand.tags) ? hand.tags : [];
+}
+
+function tagLabel(tag) {
+  return String(tag ?? "").replaceAll("-", " ");
+}
+
+function renderTags(tags, { interactive = false, activeTags = [] } = {}) {
+  const items = [...new Set(tags.filter(Boolean))];
+  if (items.length === 0) {
+    return "";
+  }
+
+  return `
+    <div class="tag-list">
+      ${items.map((tag) => {
+        const active = activeTags.includes(tag) ? "active" : "";
+        const body = `<span>${escapeHtml(tagLabel(tag))}</span>`;
+        return interactive
+          ? `<button class="tag-chip ${active}" type="button" data-review-tag="${escapeHtml(tag)}">${body}</button>`
+          : `<span class="tag-chip ${active}">${body}</span>`;
+      }).join("")}
+    </div>
+  `;
+}
+
 function renderSparkline(points) {
   if (!points.length) {
     return '<div class="empty">No bankroll sessions yet.</div>';
@@ -376,7 +415,7 @@ function renderMetrics() {
   elements.metrics.hands.textContent = handCount;
   elements.metrics.players.textContent = state.players.length;
   elements.metrics.vpip.textContent = `${avgVpip.toFixed(1)}%`;
-  elements.metrics.leaks.textContent = state.leaks.length;
+  elements.metrics.leaks.textContent = state.reviewSpots.length;
   elements.metrics.profit.textContent = formatCurrency(state.bankrollSummary.totalProfit, {
     compact: true,
     signed: true
@@ -644,21 +683,28 @@ function renderBankrollCharts() {
     .join("");
 }
 
-function renderLeaks() {
-  if (state.leaks.length === 0) {
-    elements.leakList.innerHTML = '<div class="empty">No review signals yet.</div>';
+function renderReviewQueue() {
+  if (state.reviewSpots.length === 0) {
+    elements.leakList.innerHTML = '<div class="empty">No hands in the review queue yet.</div>';
     return;
   }
 
-  elements.leakList.innerHTML = state.leaks
+  elements.leakList.innerHTML = state.reviewSpots
     .map(
-      (leak) => `
-        <article class="leak ${leak.severity}">
-          <div class="leak-title">
-            <strong>${escapeHtml(leak.title)}</strong>
-            <span class="pill">${escapeHtml(leak.player)}</span>
+      (spot) => `
+        <article class="review-spot">
+          <button class="review-spot-main" type="button" data-review-spot-hand="${escapeHtml(spot.id)}">
+            <div>
+              <strong>#${escapeHtml(spot.handNumber)} / ${escapeHtml(spot.tableName ?? "Table")}</strong>
+              <p>${escapeHtml(spot.reasons.join(" / "))}</p>
+            </div>
+            <span>${formatCurrency(spot.estimatedHeroResult, { signed: true })}</span>
+          </button>
+          <div class="review-spot-meta">
+            ${renderCards([...(spot.heroCards ?? []), ...(spot.board ?? [])])}
+            ${renderTags(spot.tags ?? [])}
+            ${spot.reviewedAt ? '<span class="status ready">reviewed</span>' : '<span class="status queued">open</span>'}
           </div>
-          <p>${escapeHtml(leak.detail)}</p>
         </article>
       `
     )
@@ -737,6 +783,7 @@ function renderSessionDetail() {
   const id = sessionId(selectedSession);
   const linkedImports = importsForSession(id);
   const linkedHands = handsForSession(id);
+  const sessionQueue = state.reviewSpots.filter((spot) => spot.sessionId === id).slice(0, 5);
   const estimatedResult = linkedHands.reduce((sum, hand) => sum + estimatedHeroResult(hand), 0);
   const spots = linkedHands
     .map((hand) => ({
@@ -774,7 +821,20 @@ function renderSessionDetail() {
         }
       </div>
       <div class="linked-section">
-        <h4>Review Hands</h4>
+        <h4>Review Queue</h4>
+        ${
+          sessionQueue.length
+            ? sessionQueue.map((spot) => `
+                <button class="linked-hand" type="button" data-open-hand="${escapeHtml(spot.id)}">
+                  <span>#${escapeHtml(spot.handNumber)} / ${escapeHtml(spot.reasons.join(", "))}</span>
+                  <strong>${formatCurrency(spot.estimatedHeroResult, { signed: true })}</strong>
+                </button>
+              `).join("")
+            : '<p class="muted-line">Tagged hands and large decision points appear here.</p>'
+        }
+      </div>
+      <div class="linked-section">
+        <h4>Largest Swings</h4>
         ${
           spots.length
             ? spots.map(({ hand, result }) => `
@@ -850,14 +910,17 @@ function renderHands() {
       const heroCards = hand.hero ? hand.holeCards[hand.hero] : [];
       const winners = Object.keys(hand.winnings);
       const active = hand.id === state.selectedHandId ? "active" : "";
+      const tags = handTags(hand);
       return `
         <button class="hand ${active}" type="button" data-hand-id="${escapeHtml(hand.id)}">
           <div class="hand-title">
             <strong>#${escapeHtml(hand.handNumber)}</strong>
-            <span class="pill">${escapeHtml(hand.tableName ?? "Table")}</span>
+            <span class="pill">${hand.reviewedAt ? "reviewed" : escapeHtml(hand.tableName ?? "Table")}</span>
           </div>
           ${renderCards([...heroCards, ...hand.board])}
           <p>${escapeHtml(hand.hero ?? "Unknown")} ${heroCards?.length ? "was dealt" : "sat in"} ${escapeHtml(heroCards?.join(" ") ?? "")}. Winner: ${escapeHtml(winners.join(", ") || "not shown")}.</p>
+          ${renderTags(tags)}
+          ${hand.notes ? '<p class="note-preview">Has review note</p>' : ""}
         </button>
       `;
     })
@@ -972,6 +1035,8 @@ function renderHandDetail() {
   }
 
   const heroCards = hand.hero ? hand.holeCards[hand.hero] : [];
+  const activeTags = handTags(hand);
+  const reviewTags = [...new Set([...suggestedReviewTags, ...activeTags])];
   const steps = replaySteps(hand);
   state.replayStep = Math.max(0, Math.min(state.replayStep, steps.length - 1));
   const actionGroups = new Map(streetOrder.map((street) => [street, []]));
@@ -1021,6 +1086,25 @@ function renderHandDetail() {
       </div>
     </article>
     ${renderReplayer(hand, steps)}
+    <section class="review-editor">
+      <div class="review-editor-head">
+        <div>
+          <span class="subtle">Review</span>
+          <strong>${hand.reviewedAt ? `Reviewed ${new Date(hand.reviewedAt).toLocaleDateString()}` : "Open"}</strong>
+        </div>
+        <span class="pill">${formatCurrency(estimatedHeroResult(hand), { signed: true })}</span>
+      </div>
+      ${renderTags(reviewTags, {
+        interactive: true,
+        activeTags
+      })}
+      <textarea data-review-notes rows="5" placeholder="What happened in this hand?">${escapeHtml(hand.notes ?? "")}</textarea>
+      <div class="form-actions">
+        <button class="button" type="button" data-save-review>Save Review</button>
+        <button class="button secondary" type="button" data-mark-reviewed>Mark Reviewed</button>
+        <button class="button ghost" type="button" data-clear-reviewed>Reopen</button>
+      </div>
+    </section>
     <ul class="seat-list">${seats}</ul>
     <div class="street-list">${streets || '<div class="empty">No actions parsed for this hand.</div>'}</div>
   `;
@@ -1092,7 +1176,7 @@ function render() {
   renderPlayerStats();
   renderCharts();
   renderBankrollCharts();
-  renderLeaks();
+  renderReviewQueue();
   renderSessions();
   renderHands();
   renderHandDetail();
@@ -1112,6 +1196,7 @@ async function refresh({ quiet = false } = {}) {
     importsPayload,
     statsPayload,
     leaksPayload,
+    reviewPayload,
     bankrollSessionsPayload,
     bankrollSummaryPayload
   ] = await Promise.all([
@@ -1119,6 +1204,7 @@ async function refresh({ quiet = false } = {}) {
     api("/api/imports"),
     api("/api/stats/summary"),
     api("/api/leaks"),
+    api("/api/review/spots?limit=12"),
     api("/api/bankroll/sessions"),
     api("/api/bankroll/summary")
   ]);
@@ -1127,6 +1213,7 @@ async function refresh({ quiet = false } = {}) {
   state.imports = importsPayload.imports;
   state.players = statsPayload.players;
   state.leaks = leaksPayload.leaks;
+  state.reviewSpots = reviewPayload.spots;
   state.bankrollSessions = bankrollSessionsPayload.sessions;
   state.bankrollSummary = bankrollSummaryPayload.summary;
   render();
@@ -1256,7 +1343,50 @@ elements.handList.addEventListener("click", (event) => {
   renderHandDetail();
 });
 
-elements.handDetail.addEventListener("click", (event) => {
+elements.handDetail.addEventListener("click", async (event) => {
+  const tagTarget = event.target.closest("[data-review-tag]");
+  if (tagTarget) {
+    tagTarget.classList.toggle("active");
+    return;
+  }
+
+  const reviewTarget = event.target.closest("[data-save-review], [data-mark-reviewed], [data-clear-reviewed]");
+  if (reviewTarget) {
+    const hand = state.hands.find((item) => item.id === state.selectedHandId);
+    if (!hand) {
+      return;
+    }
+
+    const tags = [...elements.handDetail.querySelectorAll("[data-review-tag].active")]
+      .map((button) => button.dataset.reviewTag);
+    const notes = elements.handDetail.querySelector("[data-review-notes]")?.value ?? "";
+    const reviewed = reviewTarget.matches("[data-mark-reviewed]")
+      ? true
+      : reviewTarget.matches("[data-clear-reviewed]")
+        ? false
+        : undefined;
+
+    try {
+      const payload = await api(`/api/hands/${encodeURIComponent(hand.id)}`, {
+        method: "PATCH",
+        body: {
+          tags,
+          notes,
+          ...(reviewed === undefined ? {} : { reviewed })
+        }
+      });
+      state.hands = state.hands.map((item) => item.id === payload.hand.id ? payload.hand : item);
+      state.selectedHandId = payload.hand.id;
+      await refresh({ quiet: true });
+      state.selectedHandId = payload.hand.id;
+      render();
+      showToast(reviewed === true ? "Hand marked reviewed." : "Review saved.");
+    } catch (error) {
+      showToast(error.message);
+    }
+    return;
+  }
+
   const target = event.target.closest("[data-replay]");
   if (!target) {
     return;
@@ -1279,6 +1409,19 @@ elements.handDetail.addEventListener("click", (event) => {
     state.replayStep = steps.length - 1;
   }
 
+  renderHandDetail();
+});
+
+elements.leakList.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-review-spot-hand]");
+  if (!target) {
+    return;
+  }
+
+  state.selectedHandId = target.dataset.reviewSpotHand;
+  state.replayStep = 0;
+  setView("hands");
+  renderHands();
   renderHandDetail();
 });
 
