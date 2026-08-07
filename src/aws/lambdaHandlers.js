@@ -31,6 +31,11 @@ function handIdFromPath(pathname) {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+function similarHandIdFromPath(pathname) {
+  const match = pathname.match(/^\/api\/hands\/([^/]+)\/similar$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 function bankrollSessionIdFromPath(pathname) {
   const match = pathname.match(/^\/api\/bankroll\/sessions\/([^/]+)$/);
   return match ? decodeURIComponent(match[1]) : null;
@@ -201,7 +206,39 @@ export async function api(event) {
           limit: queryValue(event, "limit"),
           sessionId: queryValue(event, "sessionId"),
           tag: queryValue(event, "tag"),
-          reviewed: reviewedParam(queryValue(event, "reviewed"))
+          reviewed: reviewedParam(queryValue(event, "reviewed")),
+          sort: queryValue(event, "sort")
+        })
+      });
+    }
+
+    if (pathname === "/api/study/tags" && method === "GET") {
+      return jsonResponse(200, {
+        tags: await store.tagPerformance()
+      });
+    }
+
+    if (pathname === "/api/study/library" && method === "GET") {
+      return jsonResponse(200, {
+        hands: await store.handLibrary({
+          limit: parseLimit(queryValue(event, "limit")),
+          sessionId: queryValue(event, "sessionId"),
+          tag: queryValue(event, "tag"),
+          reviewed: reviewedParam(queryValue(event, "reviewed")),
+          position: queryValue(event, "position"),
+          result: queryValue(event, "result"),
+          player: queryValue(event, "player"),
+          search: queryValue(event, "search"),
+          sort: queryValue(event, "sort")
+        })
+      });
+    }
+
+    const similarHandId = similarHandIdFromPath(pathname);
+    if (similarHandId && method === "GET") {
+      return jsonResponse(200, {
+        hands: await store.similarHands(similarHandId, {
+          limit: queryValue(event, "limit")
         })
       });
     }

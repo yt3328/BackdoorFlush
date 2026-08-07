@@ -6,6 +6,7 @@ import { handKey, hashText } from "../core/importIdentity.js";
 import { buildLiveHand } from "../core/liveHandBuilder.js";
 import { buildSessionDetail } from "../core/sessionInsights.js";
 import { buildBankrollSession, summarizeBankrollSessions } from "../core/sessionTracker.js";
+import { buildTagPerformance, filterHandLibrary, findSimilarHands } from "../core/studyTools.js";
 
 function emptyState() {
   return {
@@ -197,6 +198,18 @@ export class HandStore {
 
   reviewQueue(filters = {}) {
     return buildReviewQueue(this.listHands({ limit: 1000 }), filters);
+  }
+
+  handLibrary(filters = {}) {
+    return filterHandLibrary(this.listHands({ limit: 1000 }), filters);
+  }
+
+  tagPerformance() {
+    return buildTagPerformance(this.listHands({ limit: 1000 }));
+  }
+
+  similarHands(id, filters = {}) {
+    return findSimilarHands(this.listHands({ limit: 1000 }), id, filters);
   }
 
   updateImportSession(importId, sessionId) {

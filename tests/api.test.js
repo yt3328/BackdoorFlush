@@ -51,6 +51,81 @@ function dispatch({ method = "GET", url, body } = {}) {
   });
 }
 
+async function createTaggedLiveHand({
+  sessionId,
+  handNumber,
+  position = "BTN",
+  tags = [],
+  reviewed = false,
+  winner = "Villain",
+  wonAmount = 180,
+  riverAmount = 70
+} = {}) {
+  const liveResponse = await dispatch({
+    method: "POST",
+    url: "/api/live-hands",
+    body: {
+      sessionId,
+      name: handNumber,
+      tableName: "Study table",
+      stakes: "$2/$5",
+      handNumber,
+      hero: "Tao",
+      heroCards: "Ah Kd",
+      boardCards: "As 7c 2h Jh 4s",
+      winner,
+      wonAmount,
+      players: [
+        {
+          seat: 1,
+          name: "Tao",
+          position,
+          stack: 900
+        },
+        {
+          seat: 2,
+          name: "Villain",
+          position: "BB",
+          stack: 900
+        }
+      ],
+      actions: [
+        {
+          street: "hole-cards",
+          player: "Tao",
+          type: "raises",
+          amount: 20
+        },
+        {
+          street: "hole-cards",
+          player: "Villain",
+          type: "calls",
+          amount: 20
+        },
+        {
+          street: "river",
+          player: "Tao",
+          type: "calls",
+          amount: riverAmount
+        }
+      ]
+    }
+  });
+  const livePayload = await liveResponse.json();
+
+  await dispatch({
+    method: "PATCH",
+    url: `/api/hands/${livePayload.hand.id}`,
+    body: {
+      tags,
+      reviewed,
+      notes: tags.join(" ")
+    }
+  });
+
+  return livePayload.hand;
+}
+
 test("health endpoint returns ok", async () => {
   const response = await dispatch({ url: "/api/health" });
   const payload = await response.json();
@@ -486,6 +561,69 @@ test("hand review metadata can be saved and queried through the review queue", a
   assert.equal(reviewedQueuePayload.spots[0].id, livePayload.hand.id);
   assert.ok(reviewedQueuePayload.spots[0].reasons.includes("Tagged"));
   assert.equal(openQueuePayload.spots.length, 0);
+});
+
+test("study endpoints return tag summaries, filtered library hands, and similar spots", async () => {
+  const sessionResponse = await dispatch({
+    method: "POST",
+    url: "/api/bankroll/sessions",
+    body: {
+      date: "2026-08-07",
+      location: "Study room",
+      stakes: "$2/$5",
+      hours: 3,
+      profit: -120
+    }
+  });
+  const session = (await sessionResponse.json()).session;
+  const target = await createTaggedLiveHand({
+    sessionId: session.id,
+    handNumber: "study-target",
+    tags: ["river decision", "bad-call"],
+    reviewed: false,
+    winner: "Villain",
+    riverAmount: 90
+  });
+  const close = await createTaggedLiveHand({
+    sessionId: session.id,
+    handNumber: "study-close",
+    tags: ["river-decision"],
+    reviewed: true,
+    winner: "Tao",
+    wonAmount: 240,
+    riverAmount: 85
+  });
+  await createTaggedLiveHand({
+    sessionId: session.id,
+    handNumber: "study-far",
+    position: "CO",
+    tags: ["value-bet"],
+    reviewed: false,
+    winner: "Tao",
+    wonAmount: 150,
+    riverAmount: 25
+  });
+
+  const tagsResponse = await dispatch({ url: "/api/study/tags" });
+  const tagsPayload = await tagsResponse.json();
+  const libraryResponse = await dispatch({
+    url: `/api/study/library?tag=river-decision&reviewed=false&position=BTN&result=loss&sessionId=${encodeURIComponent(session.id)}&sort=biggest-loss`
+  });
+  const libraryPayload = await libraryResponse.json();
+  const similarResponse = await dispatch({
+    url: `/api/hands/${encodeURIComponent(target.id)}/similar?limit=2`
+  });
+  const similarPayload = await similarResponse.json();
+  const riverSummary = tagsPayload.tags.find((row) => row.tag === "river-decision");
+
+  assert.equal(tagsResponse.status, 200);
+  assert.equal(riverSummary.handCount, 2);
+  assert.equal(riverSummary.reviewedCount, 1);
+  assert.equal(libraryResponse.status, 200);
+  assert.deepEqual(libraryPayload.hands.map((hand) => hand.id), [target.id]);
+  assert.equal(similarResponse.status, 200);
+  assert.equal(similarPayload.hands[0].id, close.id);
+  assert.ok(similarPayload.hands[0].similarityReasons.some((reason) => reason.includes("Shared tag")));
 });
 
 test("clearing imported hands preserves bankroll records", async () => {

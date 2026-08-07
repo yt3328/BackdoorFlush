@@ -1,6 +1,6 @@
 # Deployment
 
-Version 0.8 keeps the cloud sign-in and static frontend hosting from the earlier AWS version, then adds hand review tags, notes, reviewed/open status, and a ranked review queue. Local mode still works with `npm start`.
+Version 0.9 keeps the cloud sign-in and static frontend hosting from the earlier AWS version, then adds study filters, tag performance summaries, review queue controls, and similar-hand recommendations. Local mode still works with `npm start`.
 
 ## What Deploys
 

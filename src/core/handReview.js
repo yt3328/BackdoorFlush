@@ -136,6 +136,8 @@ function reviewScore(hand) {
 }
 
 function publicReviewSpot(hand) {
+  const heroSeat = (hand.players ?? []).find((player) => player.name === hand.hero);
+
   return {
     id: hand.id,
     handId: hand.handId,
@@ -146,14 +148,40 @@ function publicReviewSpot(hand) {
     hero: hand.hero,
     heroCards: hand.hero ? hand.holeCards?.[hand.hero] ?? [] : [],
     board: hand.board ?? [],
+    heroPosition: heroSeat?.position ?? "Unknown",
     tags: normalizeTags(hand.tags ?? []),
     notes: cleanNotes(hand.notes),
     reviewedAt: hand.reviewedAt ?? null,
+    importedAt: hand.importedAt ?? hand.createdAt ?? null,
     estimatedHeroResult: estimateHeroResult(hand),
     trackedPot: trackedPot(hand),
     score: reviewScore(hand),
     reasons: reviewReasons(hand)
   };
+}
+
+function compareReviewSpots(a, b, sort = "priority") {
+  if (sort === "biggest-loss") {
+    return a.estimatedHeroResult - b.estimatedHeroResult;
+  }
+
+  if (sort === "biggest-win") {
+    return b.estimatedHeroResult - a.estimatedHeroResult;
+  }
+
+  if (sort === "biggest-pot") {
+    return b.trackedPot - a.trackedPot;
+  }
+
+  if (sort === "newest") {
+    return String(b.importedAt).localeCompare(String(a.importedAt));
+  }
+
+  if (sort === "oldest") {
+    return String(a.importedAt).localeCompare(String(b.importedAt));
+  }
+
+  return b.score - a.score || Math.abs(b.estimatedHeroResult) - Math.abs(a.estimatedHeroResult);
 }
 
 export function buildReviewQueue(hands = [], filters = {}) {
@@ -177,6 +205,6 @@ export function buildReviewQueue(hands = [], filters = {}) {
 
   return spots
     .filter((spot) => spot.score > 0)
-    .sort((a, b) => b.score - a.score || Math.abs(b.estimatedHeroResult) - Math.abs(a.estimatedHeroResult))
+    .sort((a, b) => compareReviewSpots(a, b, filters.sort))
     .slice(0, limit);
 }

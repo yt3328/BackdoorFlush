@@ -46,6 +46,7 @@ flowchart LR
 - Imports and hands can carry a `sessionId`, which lets one bankroll record open into its linked hand review.
 - Live hands are normalized into the same hand shape as parsed imports, then saved as ready `live-entry` imports.
 - Review tags, notes, and reviewed status live on each hand record.
+- Study views derive tag performance, filtered library rows, and similar spots from those hand records.
 - CloudWatch alarms track API and parse worker errors.
 - SageMaker can be added later for recommendation or clustering work.
 
@@ -101,6 +102,6 @@ Imports include:
 - `rawKey`
 - `importedAt`
 
-## Version 0.8 Boundaries
+## Version 0.9 Boundaries
 
-The cloud backend and frontend host are deployed with SAM. The dashboard files are still plain static assets, so publishing the frontend is a separate `aws s3 sync` step after the stack is updated and `public/config.js` contains the API and Cognito outputs. v0.8 supports tags, notes, reviewed/open state, and a ranked review queue. The queue is still rule-based; a later version can learn from reviewed hands and tags.
+The cloud backend and frontend host are deployed with SAM. The dashboard files are still plain static assets, so publishing the frontend is a separate `aws s3 sync` step after the stack is updated and `public/config.js` contains the API and Cognito outputs. v0.9 supports hand-library filters, tag performance summaries, review queue controls, and similar-hand recommendations. The similarity scoring is still rule-based; a later version can learn from reviewed hands, tags, and user corrections.

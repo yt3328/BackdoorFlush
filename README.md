@@ -4,7 +4,7 @@ PokerFeltScope is a small hand-history desk for reviewing poker sessions.
 
 The local app lets you upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, track bankroll sessions, and run quick equity checks.
 
-Version 0.8 adds hand tags, review notes, reviewed/open status, and a ranked review queue.
+Version 0.9 adds study filters, tag performance summaries, review queue controls, and similar-hand recommendations.
 
 ## Run it
 
@@ -37,6 +37,9 @@ Local mode:
 - Opens a session detail view with linked imports, linked hands, and estimated hero results from parsed actions.
 - Saves tags and notes on individual hands.
 - Builds a review queue from large swings, tagged hands, river decisions, and unreviewed spots.
+- Filters the hand library by tag, review status, session, hero position, result type, and pot/result sort.
+- Summarizes tag performance across saved review spots.
+- Finds similar hands from the selected hand's tags, hero position, streets, action pattern, pot size, and result.
 - Replays parsed actions on a visual table with step controls.
 - Flags a few basic review signals from the current sample.
 - Runs a Monte Carlo equity check for 2-card Hold'em hands.
@@ -53,6 +56,7 @@ AWS mode:
 - Saves live-entered hands directly as ready imports.
 - Writes imports and parsed hands to DynamoDB.
 - Stores review tags, notes, and reviewed status on hand records.
+- Serves study endpoints for tag performance, hand-library filters, and similar spots.
 - Writes bankroll sessions to a separate DynamoDB table.
 - Exposes the same core stats/equity behavior through Lambda handlers.
 - Hosts the static dashboard from a private S3 bucket through CloudFront.
@@ -66,6 +70,8 @@ curl http://localhost:3400/api/hands
 curl http://localhost:3400/api/stats/summary
 curl http://localhost:3400/api/leaks
 curl http://localhost:3400/api/review/spots
+curl http://localhost:3400/api/study/tags
+curl http://localhost:3400/api/study/library
 curl http://localhost:3400/api/bankroll/summary
 curl http://localhost:3400/api/bankroll/sessions
 curl -X POST http://localhost:3400/api/live-hands
@@ -90,6 +96,7 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 - `src/core/handParser.js` parses hand-history text.
 - `src/core/liveHandBuilder.js` normalizes manually entered live hands.
 - `src/core/handReview.js` normalizes review metadata and ranks hands for review.
+- `src/core/studyTools.js` summarizes tags, filters the study library, and finds similar spots.
 - `src/core/stats.js` computes player summaries and review signals.
 - `src/core/equity.js` runs the Hold'em equity calculator.
 - `src/core/sessionTracker.js` normalizes bankroll sessions and summary stats.
@@ -107,5 +114,5 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 
 - Support more hand-history formats and larger real-world exports.
 - Add richer filters inside the session detail view.
-- Add hand comparison tools for similar tagged spots.
-- Replace the first-pass review ranking with a larger recommendation engine.
+- Add saved study plans built from recurring tags and losses.
+- Replace the first-pass similarity scoring with a larger recommendation engine.

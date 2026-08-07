@@ -143,10 +143,24 @@ Returns player-level hands, VPIP, PFR, 3-bet rate, aggression factor, and positi
 ```http
 GET /api/leaks
 GET /api/leaks?player=Tao
-GET /api/review/spots?sessionId=sess_...&tag=river-decision&reviewed=false
+GET /api/review/spots?sessionId=sess_...&tag=river-decision&reviewed=false&sort=biggest-loss
 ```
 
 `/api/leaks` returns rule-based player notes for the current sample. `/api/review/spots` returns ranked hands to review, using hand tags, notes, reviewed status, large pots, swings, and river decisions. All query params are optional.
+
+## Study
+
+```http
+GET /api/study/tags
+GET /api/study/library?tag=river-decision&reviewed=false&position=BTN&result=loss&sort=biggest-loss
+GET /api/hands/:id/similar?limit=6
+```
+
+`/api/study/tags` returns tag-level hand counts, reviewed/open counts, total estimated result, average result, largest win/loss, and reviewed percentage.
+
+`/api/study/library` returns compact hand rows for a filtered study library. Supported filters are `limit`, `sessionId`, `tag`, `reviewed`, `position`, `result`, `player`, `search`, and `sort`.
+
+`/api/hands/:id/similar` returns hands ranked by shared tags, hero position, decision streets, preflop shape, pot size, and result type.
 
 ## Session
 
@@ -185,7 +199,7 @@ Create a bankroll session:
 
 The server calculates `profit`, `bbWon`, `hourlyRate`, and `bbPerHour`. If `profit` is sent directly, it overrides the buy-in/cash-out calculation.
 
-`GET /api/bankroll/sessions/:id` returns the session, linked imports, linked hands, player summaries, review signals, and the biggest estimated hero wins/losses for that session.
+`GET /api/bankroll/sessions/:id` returns the session, linked imports, linked hands, player summaries, review signals, a small review queue, and the biggest estimated hero wins/losses for that session.
 
 ## Equity
 

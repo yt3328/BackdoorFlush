@@ -4,6 +4,7 @@ import { handKey, hashText } from "../core/importIdentity.js";
 import { buildLiveHand } from "../core/liveHandBuilder.js";
 import { buildSessionDetail } from "../core/sessionInsights.js";
 import { buildBankrollSession, summarizeBankrollSessions } from "../core/sessionTracker.js";
+import { buildTagPerformance, filterHandLibrary, findSimilarHands } from "../core/studyTools.js";
 
 function requiredEnv(name) {
   const value = process.env[name];
@@ -463,6 +464,18 @@ export class CloudHandStore {
 
   async reviewQueue(filters = {}) {
     return buildReviewQueue(await this.listHands({ limit: 1000 }), filters);
+  }
+
+  async handLibrary(filters = {}) {
+    return filterHandLibrary(await this.listHands({ limit: 1000 }), filters);
+  }
+
+  async tagPerformance() {
+    return buildTagPerformance(await this.listHands({ limit: 1000 }));
+  }
+
+  async similarHands(handId, filters = {}) {
+    return findSimilarHands(await this.listHands({ limit: 1000 }), handId, filters);
   }
 
   async updateImportSession(importId, sessionId) {

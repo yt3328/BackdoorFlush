@@ -52,6 +52,9 @@ const state = {
   players: [],
   leaks: [],
   reviewSpots: [],
+  studyTags: [],
+  similarHands: [],
+  similarForHandId: null,
   selectedSessionId: null,
   selectedHandId: null,
   liveActions: [],
@@ -75,8 +78,18 @@ const elements = {
   refresh: document.querySelector("#refresh"),
   playerFilter: document.querySelector("#player-filter"),
   handPlayerFilter: document.querySelector("#hand-player-filter"),
+  handTagFilter: document.querySelector("#hand-tag-filter"),
+  handReviewFilter: document.querySelector("#hand-review-filter"),
+  handPositionFilter: document.querySelector("#hand-position-filter"),
+  handSessionFilter: document.querySelector("#hand-session-filter"),
+  handResultFilter: document.querySelector("#hand-result-filter"),
+  handSort: document.querySelector("#hand-sort"),
+  handLibrarySummary: document.querySelector("#hand-library-summary"),
+  reviewStatusFilter: document.querySelector("#review-status-filter"),
+  reviewSort: document.querySelector("#review-sort"),
   playerStats: document.querySelector("#player-stats"),
   leakList: document.querySelector("#leak-list"),
+  tagSummary: document.querySelector("#tag-summary"),
   positionChart: document.querySelector("#position-chart"),
   importChart: document.querySelector("#import-chart"),
   bankrollChart: document.querySelector("#bankroll-chart"),
@@ -178,6 +191,9 @@ function clearDashboardData() {
   state.players = [];
   state.leaks = [];
   state.reviewSpots = [];
+  state.studyTags = [];
+  state.similarHands = [];
+  state.similarForHandId = null;
   state.selectedSessionId = null;
   state.selectedHandId = null;
   state.replayStep = 0;
@@ -329,12 +345,59 @@ function estimatedHeroResult(hand) {
   return Number(((Number(hand.winnings?.[hand.hero]) || 0) - committed).toFixed(2));
 }
 
+function trackedPot(hand) {
+  return (hand.actions ?? []).reduce((sum, action) => sum + (Number(action.amount) || 0), 0);
+}
+
 function handTags(hand) {
   return Array.isArray(hand.tags) ? hand.tags : [];
 }
 
+function normalizeTag(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function tagLabel(tag) {
   return String(tag ?? "").replaceAll("-", " ");
+}
+
+function heroPosition(hand) {
+  return (hand.players ?? []).find((player) => player.name === hand.hero)?.position ?? "Unknown";
+}
+
+function resultBucket(hand) {
+  const result = estimatedHeroResult(hand);
+  if (result > 0) {
+    return "win";
+  }
+
+  if (result < 0) {
+    return "loss";
+  }
+
+  return "breakeven";
+}
+
+function handDateValue(hand) {
+  return Date.parse(hand.importedAt ?? hand.createdAt ?? "") || 0;
+}
+
+function reviewQueuePath() {
+  const params = new URLSearchParams({
+    limit: "12",
+    sort: elements.reviewSort?.value || "priority"
+  });
+  const reviewed = elements.reviewStatusFilter?.value ?? "false";
+
+  if (reviewed) {
+    params.set("reviewed", reviewed);
+  }
+
+  return `/api/review/spots?${params.toString()}`;
 }
 
 function renderTags(tags, { interactive = false, activeTags = [] } = {}) {
@@ -457,6 +520,53 @@ function renderLiveSessionOptions() {
     ))
   ].join("");
   elements.liveSession.value = state.bankrollSessions.some((session) => sessionId(session) === previous) ? previous : "";
+}
+
+function allReviewTags() {
+  return [...new Set([
+    ...state.studyTags.map((row) => row.tag),
+    ...state.hands.flatMap((hand) => handTags(hand)),
+    ...suggestedReviewTags
+  ].filter(Boolean))].sort((a, b) => tagLabel(a).localeCompare(tagLabel(b)));
+}
+
+function renderHandFilterOptions() {
+  const previous = {
+    tag: elements.handTagFilter.value,
+    reviewed: elements.handReviewFilter.value,
+    position: elements.handPositionFilter.value,
+    session: elements.handSessionFilter.value,
+    result: elements.handResultFilter.value,
+    sort: elements.handSort.value
+  };
+  const positions = [...new Set(state.hands.map(heroPosition).filter(Boolean))]
+    .sort((a, b) => {
+      const aIndex = positionOrder.includes(a) ? positionOrder.indexOf(a) : positionOrder.length;
+      const bIndex = positionOrder.includes(b) ? positionOrder.indexOf(b) : positionOrder.length;
+      return aIndex - bIndex || a.localeCompare(b);
+    });
+
+  elements.handTagFilter.innerHTML = [
+    '<option value="">All tags</option>',
+    ...allReviewTags().map((tag) => `<option value="${escapeHtml(tag)}">${escapeHtml(tagLabel(tag))}</option>`)
+  ].join("");
+  elements.handPositionFilter.innerHTML = [
+    '<option value="">All positions</option>',
+    ...positions.map((position) => `<option value="${escapeHtml(position)}">${escapeHtml(position)}</option>`)
+  ].join("");
+  elements.handSessionFilter.innerHTML = [
+    '<option value="">All sessions</option>',
+    ...state.bankrollSessions.map((session) => (
+      `<option value="${escapeHtml(sessionId(session))}">${escapeHtml(sessionLabel(session))}</option>`
+    ))
+  ].join("");
+
+  elements.handTagFilter.value = allReviewTags().includes(previous.tag) ? previous.tag : "";
+  elements.handReviewFilter.value = ["", "true", "false"].includes(previous.reviewed) ? previous.reviewed : "";
+  elements.handPositionFilter.value = positions.includes(previous.position) ? previous.position : "";
+  elements.handSessionFilter.value = state.bankrollSessions.some((session) => sessionId(session) === previous.session) ? previous.session : "";
+  elements.handResultFilter.value = ["", "win", "loss", "breakeven"].includes(previous.result) ? previous.result : "";
+  elements.handSort.value = ["newest", "biggest-loss", "biggest-win", "biggest-pot", "unreviewed"].includes(previous.sort) ? previous.sort : "newest";
 }
 
 function livePlayers() {
@@ -693,21 +803,49 @@ function renderReviewQueue() {
     .map(
       (spot) => `
         <article class="review-spot">
-          <button class="review-spot-main" type="button" data-review-spot-hand="${escapeHtml(spot.id)}">
+          <div class="review-spot-main">
             <div>
               <strong>#${escapeHtml(spot.handNumber)} / ${escapeHtml(spot.tableName ?? "Table")}</strong>
               <p>${escapeHtml(spot.reasons.join(" / "))}</p>
             </div>
             <span>${formatCurrency(spot.estimatedHeroResult, { signed: true })}</span>
-          </button>
+          </div>
           <div class="review-spot-meta">
             ${renderCards([...(spot.heroCards ?? []), ...(spot.board ?? [])])}
             ${renderTags(spot.tags ?? [])}
             ${spot.reviewedAt ? '<span class="status ready">reviewed</span>' : '<span class="status queued">open</span>'}
           </div>
+          <div class="review-spot-actions">
+            <button class="button secondary" type="button" data-review-spot-hand="${escapeHtml(spot.id)}">Open</button>
+            ${
+              spot.reviewedAt
+                ? `<button class="button ghost" type="button" data-queue-reopen="${escapeHtml(spot.id)}">Reopen</button>`
+                : `<button class="button ghost" type="button" data-queue-mark-reviewed="${escapeHtml(spot.id)}">Mark Reviewed</button>`
+            }
+          </div>
         </article>
       `
     )
+    .join("");
+}
+
+function renderTagSummary() {
+  if (state.studyTags.length === 0) {
+    elements.tagSummary.innerHTML = '<div class="empty compact">No tagged hands yet.</div>';
+    return;
+  }
+
+  elements.tagSummary.innerHTML = state.studyTags
+    .slice(0, 6)
+    .map((row) => `
+      <button class="tag-summary-row" type="button" data-filter-tag="${escapeHtml(row.tag)}">
+        <span>
+          <strong>${escapeHtml(tagLabel(row.tag))}</strong>
+          <small>${row.handCount} hands / ${row.reviewedPct}% reviewed</small>
+        </span>
+        <em>${formatCurrency(row.totalResult, { signed: true })}</em>
+      </button>
+    `)
     .join("");
 }
 
@@ -891,14 +1029,92 @@ function renderSessions() {
 }
 
 function filteredHands() {
-  const filter = elements.handPlayerFilter.value.trim().toLowerCase();
-  return filter
-    ? state.hands.filter((hand) => hand.players.some((player) => player.name.toLowerCase().includes(filter)))
-    : state.hands;
+  const playerFilter = elements.handPlayerFilter.value.trim().toLowerCase();
+  const tagFilter = normalizeTag(elements.handTagFilter.value);
+  const reviewFilter = elements.handReviewFilter.value;
+  const positionFilter = elements.handPositionFilter.value;
+  const sessionFilter = elements.handSessionFilter.value;
+  const resultFilter = elements.handResultFilter.value;
+  const sort = elements.handSort.value;
+  let hands = [...state.hands];
+
+  if (playerFilter) {
+    hands = hands.filter((hand) => (hand.players ?? []).some((player) => player.name.toLowerCase().includes(playerFilter)));
+  }
+
+  if (tagFilter) {
+    hands = hands.filter((hand) => handTags(hand).includes(tagFilter));
+  }
+
+  if (reviewFilter === "true") {
+    hands = hands.filter((hand) => Boolean(hand.reviewedAt));
+  } else if (reviewFilter === "false") {
+    hands = hands.filter((hand) => !hand.reviewedAt);
+  }
+
+  if (positionFilter) {
+    hands = hands.filter((hand) => heroPosition(hand) === positionFilter);
+  }
+
+  if (sessionFilter) {
+    hands = hands.filter((hand) => hand.sessionId === sessionFilter);
+  }
+
+  if (resultFilter) {
+    hands = hands.filter((hand) => resultBucket(hand) === resultFilter);
+  }
+
+  hands.sort((a, b) => {
+    if (sort === "biggest-loss") {
+      return estimatedHeroResult(a) - estimatedHeroResult(b);
+    }
+
+    if (sort === "biggest-win") {
+      return estimatedHeroResult(b) - estimatedHeroResult(a);
+    }
+
+    if (sort === "biggest-pot") {
+      return trackedPot(b) - trackedPot(a);
+    }
+
+    if (sort === "unreviewed") {
+      return Number(Boolean(a.reviewedAt)) - Number(Boolean(b.reviewedAt)) || handDateValue(b) - handDateValue(a);
+    }
+
+    return handDateValue(b) - handDateValue(a);
+  });
+
+  return hands;
+}
+
+function renderHandLibrarySummary(hands) {
+  const reviewed = hands.filter((hand) => hand.reviewedAt).length;
+  const totalResult = hands.reduce((sum, hand) => sum + estimatedHeroResult(hand), 0);
+  const open = hands.length - reviewed;
+
+  elements.handLibrarySummary.innerHTML = `
+    <div>
+      <span class="subtle">Shown</span>
+      <strong>${hands.length}</strong>
+    </div>
+    <div>
+      <span class="subtle">Open</span>
+      <strong>${open}</strong>
+    </div>
+    <div>
+      <span class="subtle">Reviewed</span>
+      <strong>${reviewed}</strong>
+    </div>
+    <div>
+      <span class="subtle">Result</span>
+      <strong>${formatCurrency(totalResult, { signed: true })}</strong>
+    </div>
+  `;
 }
 
 function renderHands() {
   const hands = filteredHands();
+  renderHandLibrarySummary(hands);
 
   if (hands.length === 0) {
     elements.handList.innerHTML = '<div class="empty">No matching hands.</div>';
@@ -907,10 +1123,11 @@ function renderHands() {
 
   elements.handList.innerHTML = hands
     .map((hand) => {
-      const heroCards = hand.hero ? hand.holeCards[hand.hero] : [];
+      const heroCards = hand.hero ? hand.holeCards[hand.hero] ?? [] : [];
       const winners = Object.keys(hand.winnings);
       const active = hand.id === state.selectedHandId ? "active" : "";
       const tags = handTags(hand);
+      const result = estimatedHeroResult(hand);
       return `
         <button class="hand ${active}" type="button" data-hand-id="${escapeHtml(hand.id)}">
           <div class="hand-title">
@@ -919,6 +1136,7 @@ function renderHands() {
           </div>
           ${renderCards([...heroCards, ...hand.board])}
           <p>${escapeHtml(hand.hero ?? "Unknown")} ${heroCards?.length ? "was dealt" : "sat in"} ${escapeHtml(heroCards?.join(" ") ?? "")}. Winner: ${escapeHtml(winners.join(", ") || "not shown")}.</p>
+          <p>${escapeHtml(heroPosition(hand))} / ${formatCurrency(result, { signed: true })} / ${formatCurrency(trackedPot(hand))} pot</p>
           ${renderTags(tags)}
           ${hand.notes ? '<p class="note-preview">Has review note</p>' : ""}
         </button>
@@ -1026,6 +1244,62 @@ function renderReplayer(hand, steps) {
   `;
 }
 
+function renderSimilarHands(hand) {
+  const loading = state.similarForHandId !== hand.id;
+
+  if (loading) {
+    return `
+      <section class="similar-panel">
+        <div class="review-editor-head">
+          <div>
+            <span class="subtle">Study</span>
+            <strong>Similar Spots</strong>
+          </div>
+        </div>
+        <div class="empty compact">Finding matching spots.</div>
+      </section>
+    `;
+  }
+
+  if (state.similarHands.length === 0) {
+    return `
+      <section class="similar-panel">
+        <div class="review-editor-head">
+          <div>
+            <span class="subtle">Study</span>
+            <strong>Similar Spots</strong>
+          </div>
+          <span class="pill">0</span>
+        </div>
+        <div class="empty compact">No similar hands yet.</div>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="similar-panel">
+      <div class="review-editor-head">
+        <div>
+          <span class="subtle">Study</span>
+          <strong>Similar Spots</strong>
+        </div>
+        <span class="pill">${state.similarHands.length}</span>
+      </div>
+      <div class="similar-list">
+        ${state.similarHands.map((spot) => `
+          <button class="similar-hand" type="button" data-open-similar-hand="${escapeHtml(spot.id)}">
+            <span>
+              <strong>#${escapeHtml(spot.handNumber)} / ${escapeHtml(spot.heroPosition)}</strong>
+              <small>${escapeHtml((spot.similarityReasons ?? []).join(" / ") || "Related action pattern")}</small>
+            </span>
+            <em>${formatCurrency(spot.estimatedHeroResult, { signed: true })}</em>
+          </button>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
 function renderHandDetail() {
   const hand = state.hands.find((item) => item.id === state.selectedHandId);
 
@@ -1105,6 +1379,7 @@ function renderHandDetail() {
         <button class="button ghost" type="button" data-clear-reviewed>Reopen</button>
       </div>
     </section>
+    ${renderSimilarHands(hand)}
     <ul class="seat-list">${seats}</ul>
     <div class="street-list">${streets || '<div class="empty">No actions parsed for this hand.</div>'}</div>
   `;
@@ -1170,6 +1445,7 @@ function render() {
   renderPlayerOptions();
   renderSessionOptions();
   renderLiveSessionOptions();
+  renderHandFilterOptions();
   renderLivePlayerOptions();
   renderLiveActions();
   renderLivePreview();
@@ -1177,6 +1453,7 @@ function render() {
   renderCharts();
   renderBankrollCharts();
   renderReviewQueue();
+  renderTagSummary();
   renderSessions();
   renderHands();
   renderHandDetail();
@@ -1197,6 +1474,7 @@ async function refresh({ quiet = false } = {}) {
     statsPayload,
     leaksPayload,
     reviewPayload,
+    tagsPayload,
     bankrollSessionsPayload,
     bankrollSummaryPayload
   ] = await Promise.all([
@@ -1204,7 +1482,8 @@ async function refresh({ quiet = false } = {}) {
     api("/api/imports"),
     api("/api/stats/summary"),
     api("/api/leaks"),
-    api("/api/review/spots?limit=12"),
+    api(reviewQueuePath()),
+    api("/api/study/tags"),
     api("/api/bankroll/sessions"),
     api("/api/bankroll/summary")
   ]);
@@ -1214,13 +1493,65 @@ async function refresh({ quiet = false } = {}) {
   state.players = statsPayload.players;
   state.leaks = leaksPayload.leaks;
   state.reviewSpots = reviewPayload.spots;
+  state.studyTags = tagsPayload.tags;
   state.bankrollSessions = bankrollSessionsPayload.sessions;
   state.bankrollSummary = bankrollSummaryPayload.summary;
+
+  if (state.selectedHandId && !state.hands.some((hand) => hand.id === state.selectedHandId)) {
+    state.selectedHandId = null;
+    state.replayStep = 0;
+  }
+
+  if (!state.selectedHandId && state.hands.length > 0) {
+    state.selectedHandId = state.hands[0].id;
+    state.replayStep = 0;
+  }
+
+  if (state.selectedHandId) {
+    const similarPayload = await api(`/api/hands/${encodeURIComponent(state.selectedHandId)}/similar?limit=6`);
+    state.similarForHandId = state.selectedHandId;
+    state.similarHands = similarPayload.hands;
+  } else {
+    state.similarForHandId = null;
+    state.similarHands = [];
+  }
+
   render();
 
   if (!quiet) {
     renderAuthState();
   }
+}
+
+async function loadReviewQueue() {
+  const payload = await api(reviewQueuePath());
+  state.reviewSpots = payload.spots;
+  renderMetrics();
+  renderReviewQueue();
+  renderSessions();
+}
+
+async function loadSimilarHands(handId) {
+  state.similarForHandId = null;
+  state.similarHands = [];
+  renderHandDetail();
+
+  const payload = await api(`/api/hands/${encodeURIComponent(handId)}/similar?limit=6`);
+  if (state.selectedHandId !== handId) {
+    return;
+  }
+
+  state.similarForHandId = handId;
+  state.similarHands = payload.hands;
+  renderHandDetail();
+}
+
+async function selectHand(handId) {
+  state.selectedHandId = handId;
+  state.replayStep = 0;
+  renderHands();
+  renderHandDetail();
+  await loadSimilarHands(handId);
 }
 
 function readSelectedFile(file) {
@@ -1330,6 +1661,22 @@ elements.playerFilter.addEventListener("change", () => {
   renderCharts();
 });
 elements.handPlayerFilter.addEventListener("input", renderHands);
+for (const filter of [
+  elements.handTagFilter,
+  elements.handReviewFilter,
+  elements.handPositionFilter,
+  elements.handSessionFilter,
+  elements.handResultFilter,
+  elements.handSort
+]) {
+  filter.addEventListener("change", renderHands);
+}
+
+for (const filter of [elements.reviewStatusFilter, elements.reviewSort]) {
+  filter.addEventListener("change", () => {
+    loadReviewQueue().catch((error) => showToast(error.message));
+  });
+}
 
 elements.handList.addEventListener("click", (event) => {
   const target = event.target.closest("[data-hand-id]");
@@ -1337,13 +1684,16 @@ elements.handList.addEventListener("click", (event) => {
     return;
   }
 
-  state.selectedHandId = target.dataset.handId;
-  state.replayStep = 0;
-  renderHands();
-  renderHandDetail();
+  selectHand(target.dataset.handId).catch((error) => showToast(error.message));
 });
 
 elements.handDetail.addEventListener("click", async (event) => {
+  const similarTarget = event.target.closest("[data-open-similar-hand]");
+  if (similarTarget) {
+    await selectHand(similarTarget.dataset.openSimilarHand);
+    return;
+  }
+
   const tagTarget = event.target.closest("[data-review-tag]");
   if (tagTarget) {
     tagTarget.classList.toggle("active");
@@ -1413,16 +1763,41 @@ elements.handDetail.addEventListener("click", async (event) => {
 });
 
 elements.leakList.addEventListener("click", (event) => {
+  const markTarget = event.target.closest("[data-queue-mark-reviewed], [data-queue-reopen]");
+  if (markTarget) {
+    const id = markTarget.dataset.queueMarkReviewed ?? markTarget.dataset.queueReopen;
+    const reviewed = Boolean(markTarget.dataset.queueMarkReviewed);
+
+    api(`/api/hands/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: {
+        reviewed
+      }
+    })
+      .then(async () => {
+        await refresh({ quiet: true });
+        showToast(reviewed ? "Hand marked reviewed." : "Hand reopened.");
+      })
+      .catch((error) => showToast(error.message));
+    return;
+  }
+
   const target = event.target.closest("[data-review-spot-hand]");
+  if (target) {
+    setView("hands");
+    selectHand(target.dataset.reviewSpotHand).catch((error) => showToast(error.message));
+  }
+});
+
+elements.tagSummary.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-filter-tag]");
   if (!target) {
     return;
   }
 
-  state.selectedHandId = target.dataset.reviewSpotHand;
-  state.replayStep = 0;
   setView("hands");
+  elements.handTagFilter.value = target.dataset.filterTag;
   renderHands();
-  renderHandDetail();
 });
 
 elements.importList.addEventListener("click", async (event) => {
@@ -1570,11 +1945,8 @@ elements.sessionDetail.addEventListener("click", (event) => {
     return;
   }
 
-  state.selectedHandId = target.dataset.openHand;
-  state.replayStep = 0;
   setView("hands");
-  renderHands();
-  renderHandDetail();
+  selectHand(target.dataset.openHand).catch((error) => showToast(error.message));
 });
 
 elements.bankrollCancel.addEventListener("click", () => {
@@ -1618,6 +1990,9 @@ elements.liveForm.addEventListener("submit", async (event) => {
     }
     render();
     setView("hands");
+    if (payload.hand?.id) {
+      await loadSimilarHands(payload.hand.id);
+    }
     showToast(payload.duplicate ? "Live hand was already saved." : "Live hand saved.");
   } catch (error) {
     showToast(error.message);

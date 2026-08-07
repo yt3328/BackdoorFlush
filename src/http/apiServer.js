@@ -33,6 +33,11 @@ function handIdFromPath(pathname) {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+function similarHandIdFromPath(pathname) {
+  const match = pathname.match(/^\/api\/hands\/([^/]+)\/similar$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 function bankrollSessionIdFromPath(pathname) {
   const match = pathname.match(/^\/api\/bankroll\/sessions\/([^/]+)$/);
   return match ? decodeURIComponent(match[1]) : null;
@@ -216,7 +221,50 @@ export function createHttpServer({ store }) {
             limit: requestUrl.searchParams.get("limit"),
             sessionId: requestUrl.searchParams.get("sessionId"),
             tag: requestUrl.searchParams.get("tag"),
-            reviewed: reviewedParam(requestUrl.searchParams.get("reviewed"))
+            reviewed: reviewedParam(requestUrl.searchParams.get("reviewed")),
+            sort: requestUrl.searchParams.get("sort")
+          })
+        });
+        return;
+      }
+
+      if (requestUrl.pathname === "/api/study/tags") {
+        if (!methodAllowed(request, response, "GET")) {
+          return;
+        }
+
+        sendJson(response, 200, {
+          tags: store.tagPerformance()
+        });
+        return;
+      }
+
+      if (requestUrl.pathname === "/api/study/library") {
+        if (!methodAllowed(request, response, "GET")) {
+          return;
+        }
+
+        sendJson(response, 200, {
+          hands: store.handLibrary({
+            limit: parseLimit(requestUrl.searchParams.get("limit")),
+            sessionId: requestUrl.searchParams.get("sessionId"),
+            tag: requestUrl.searchParams.get("tag"),
+            reviewed: reviewedParam(requestUrl.searchParams.get("reviewed")),
+            position: requestUrl.searchParams.get("position"),
+            result: requestUrl.searchParams.get("result"),
+            player: requestUrl.searchParams.get("player"),
+            search: requestUrl.searchParams.get("search"),
+            sort: requestUrl.searchParams.get("sort")
+          })
+        });
+        return;
+      }
+
+      const similarHandId = similarHandIdFromPath(requestUrl.pathname);
+      if (similarHandId && request.method === "GET") {
+        sendJson(response, 200, {
+          hands: store.similarHands(similarHandId, {
+            limit: requestUrl.searchParams.get("limit")
           })
         });
         return;

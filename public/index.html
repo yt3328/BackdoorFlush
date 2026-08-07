@@ -164,8 +164,27 @@
             <section class="panel">
               <div class="panel-head">
                 <h3>Review Queue</h3>
+                <div class="panel-controls">
+                  <select id="review-status-filter" aria-label="Review queue status">
+                    <option value="false" selected>Open</option>
+                    <option value="">All</option>
+                    <option value="true">Reviewed</option>
+                  </select>
+                  <select id="review-sort" aria-label="Review queue sort">
+                    <option value="priority">Priority</option>
+                    <option value="biggest-loss">Loss</option>
+                    <option value="biggest-pot">Pot</option>
+                    <option value="newest">Newest</option>
+                  </select>
+                </div>
               </div>
               <div id="leak-list" class="leak-list"></div>
+              <div class="study-block">
+                <div class="study-title">
+                  <h4>Tag Performance</h4>
+                </div>
+                <div id="tag-summary" class="tag-summary"></div>
+              </div>
             </section>
           </div>
         </section>
@@ -249,9 +268,39 @@
           <div class="split hands-workspace">
             <section class="panel">
               <div class="panel-head">
-                <h3>Recent Hands</h3>
+                <h3>Hand Library</h3>
                 <input id="hand-player-filter" type="search" placeholder="Filter by player">
               </div>
+              <div class="hand-filters">
+                <select id="hand-tag-filter" aria-label="Hand tag filter">
+                  <option value="">All tags</option>
+                </select>
+                <select id="hand-review-filter" aria-label="Hand review status">
+                  <option value="">All review</option>
+                  <option value="false">Open</option>
+                  <option value="true">Reviewed</option>
+                </select>
+                <select id="hand-position-filter" aria-label="Hero position filter">
+                  <option value="">All positions</option>
+                </select>
+                <select id="hand-session-filter" aria-label="Session filter">
+                  <option value="">All sessions</option>
+                </select>
+                <select id="hand-result-filter" aria-label="Result filter">
+                  <option value="">All results</option>
+                  <option value="loss">Losses</option>
+                  <option value="win">Wins</option>
+                  <option value="breakeven">Breakeven</option>
+                </select>
+                <select id="hand-sort" aria-label="Hand sort">
+                  <option value="newest">Newest</option>
+                  <option value="biggest-loss">Loss</option>
+                  <option value="biggest-win">Win</option>
+                  <option value="biggest-pot">Pot</option>
+                  <option value="unreviewed">Open first</option>
+                </select>
+              </div>
+              <div id="hand-library-summary" class="library-summary"></div>
               <div id="hand-list" class="hand-list"></div>
             </section>
 
