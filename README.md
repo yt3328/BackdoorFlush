@@ -4,7 +4,7 @@ PokerFeltScope is a small hand-history desk for reviewing poker sessions.
 
 The local app lets you upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, track bankroll sessions, and run quick equity checks.
 
-Version 0.6 links imported hand histories to bankroll sessions, so a session can show both the logged result and the hands that produced the review spots.
+Version 0.7 adds a live hand builder for hands played away from online hand-history exports.
 
 ## Run it
 
@@ -33,6 +33,7 @@ Local mode:
 - Tracks poker sessions with location, stakes, hours, buy-ins, cash-outs, results, hourly rate, and bb/hr.
 - Shows bankroll curve and location-level session charts.
 - Links imports to bankroll sessions when uploading, from the import log, or through the sample loader.
+- Saves live-entered hands from a structured builder with seats, cards, actions, winners, and session links.
 - Opens a session detail view with linked imports, linked hands, and estimated hero results from parsed actions.
 - Replays parsed actions on a visual table with step controls.
 - Flags a few basic review signals from the current sample.
@@ -47,6 +48,7 @@ AWS mode:
 - Queues uploaded hand histories through an API Lambda.
 - Stores raw text in S3.
 - Parses uploads asynchronously from SQS.
+- Saves live-entered hands directly as ready imports.
 - Writes imports and parsed hands to DynamoDB.
 - Writes bankroll sessions to a separate DynamoDB table.
 - Exposes the same core stats/equity behavior through Lambda handlers.
@@ -62,6 +64,7 @@ curl http://localhost:3400/api/stats/summary
 curl http://localhost:3400/api/leaks
 curl http://localhost:3400/api/bankroll/summary
 curl http://localhost:3400/api/bankroll/sessions
+curl -X POST http://localhost:3400/api/live-hands
 curl -X DELETE http://localhost:3400/api/session
 ```
 
@@ -81,6 +84,7 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 ## Layout
 
 - `src/core/handParser.js` parses hand-history text.
+- `src/core/liveHandBuilder.js` normalizes manually entered live hands.
 - `src/core/stats.js` computes player summaries and review signals.
 - `src/core/equity.js` runs the Hold'em equity calculator.
 - `src/core/sessionTracker.js` normalizes bankroll sessions and summary stats.
@@ -98,4 +102,5 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 
 - Support more hand-history formats and larger real-world exports.
 - Add richer filters inside the session detail view.
+- Add tags and notes to live and imported hands.
 - Replace the first-pass review rules with a larger recommendation engine.

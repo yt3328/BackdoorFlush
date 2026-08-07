@@ -290,6 +290,110 @@ test("imports can be linked to, moved between, and unlinked from bankroll sessio
   assert.equal(handsAfterDeletePayload.hands.length, 0);
 });
 
+test("live hand endpoint saves a manually entered hand into a bankroll session", async () => {
+  const sessionResponse = await dispatch({
+    method: "POST",
+    url: "/api/bankroll/sessions",
+    body: {
+      date: "2026-07-26",
+      location: "Live room",
+      stakes: "$1/$3",
+      hours: 5,
+      profit: 180
+    }
+  });
+  const session = (await sessionResponse.json()).session;
+  const liveResponse = await dispatch({
+    method: "POST",
+    url: "/api/live-hands",
+    body: {
+      sessionId: session.id,
+      name: "River call",
+      tableName: "Table 12",
+      stakes: "$1/$3",
+      handNumber: "live-test-1",
+      hero: "Tao",
+      heroCards: "Ah Kd",
+      boardCards: "As 7c 2h Jh 4s",
+      winner: "Tao",
+      wonAmount: 85,
+      players: [
+        {
+          seat: 1,
+          name: "Tao",
+          position: "BTN",
+          stack: 300
+        },
+        {
+          seat: 2,
+          name: "Villain",
+          position: "BB",
+          stack: 300
+        }
+      ],
+      actions: [
+        {
+          street: "hole-cards",
+          player: "Tao",
+          type: "raises",
+          amount: 12
+        },
+        {
+          street: "hole-cards",
+          player: "Villain",
+          type: "calls",
+          amount: 12
+        },
+        {
+          street: "flop",
+          player: "Villain",
+          type: "checks"
+        },
+        {
+          street: "flop",
+          player: "Tao",
+          type: "bets",
+          amount: 18
+        },
+        {
+          street: "flop",
+          player: "Villain",
+          type: "calls",
+          amount: 18
+        },
+        {
+          street: "river",
+          player: "Tao",
+          type: "calls",
+          amount: 40
+        }
+      ]
+    }
+  });
+  const livePayload = await liveResponse.json();
+  const handsResponse = await dispatch({
+    url: `/api/hands?sessionId=${encodeURIComponent(session.id)}`
+  });
+  const handsPayload = await handsResponse.json();
+  const summaryResponse = await dispatch({ url: "/api/stats/summary?player=Tao" });
+  const summaryPayload = await summaryResponse.json();
+  const detailResponse = await dispatch({
+    url: `/api/bankroll/sessions/${encodeURIComponent(session.id)}`
+  });
+  const detailPayload = await detailResponse.json();
+
+  assert.equal(liveResponse.status, 201);
+  assert.equal(livePayload.import.source, "live-entry");
+  assert.equal(livePayload.hand.sessionId, session.id);
+  assert.equal(livePayload.hand.hero, "Tao");
+  assert.deepEqual(livePayload.hand.holeCards.Tao, ["Ah", "Kd"]);
+  assert.equal(handsPayload.hands.length, 1);
+  assert.equal(summaryPayload.players[0].player, "Tao");
+  assert.equal(summaryPayload.players[0].hands, 1);
+  assert.equal(detailPayload.totals.handCount, 1);
+  assert.equal(detailPayload.biggestWins[0].id, livePayload.hand.id);
+});
+
 test("clearing imported hands preserves bankroll records", async () => {
   await dispatch({
     method: "POST",

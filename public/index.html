@@ -21,6 +21,7 @@
           <button class="nav-button active" data-view="overview">Overview</button>
           <button class="nav-button" data-view="sessions">Sessions</button>
           <button class="nav-button" data-view="hands">Hands</button>
+          <button class="nav-button" data-view="live">Live Hand</button>
           <button class="nav-button" data-view="equity">Equity</button>
           <button class="nav-button" data-view="imports">Imports</button>
         </nav>
@@ -259,6 +260,198 @@
                 <h3>Hand Detail</h3>
               </div>
               <div id="hand-detail" class="hand-detail"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="view-live">
+          <div class="split live-workspace">
+            <section class="panel">
+              <div class="panel-head">
+                <h3>Live Hand Builder</h3>
+              </div>
+              <form id="live-hand-form" class="form">
+                <div class="form-grid">
+                  <label>
+                    Bankroll session
+                    <select id="live-session" name="sessionId">
+                      <option value="">No linked session</option>
+                    </select>
+                  </label>
+                  <label>
+                    Name
+                    <input name="name" value="Live hand" autocomplete="off">
+                  </label>
+                  <label>
+                    Table
+                    <input name="tableName" value="Live table" autocomplete="off">
+                  </label>
+                  <label>
+                    Stakes
+                    <input name="stakes" value="$1/$3" autocomplete="off">
+                  </label>
+                  <label>
+                    Hand #
+                    <input name="handNumber" placeholder="optional" autocomplete="off">
+                  </label>
+                  <label>
+                    Hero
+                    <input id="live-hero" name="hero" value="Hero" autocomplete="off">
+                  </label>
+                  <label>
+                    Hero cards
+                    <input name="heroCards" value="Ah Kd" autocomplete="off">
+                  </label>
+                  <label>
+                    Board
+                    <input name="boardCards" value="" autocomplete="off">
+                  </label>
+                  <label>
+                    Winner
+                    <select id="live-winner" name="winner">
+                      <option value="">No winner recorded</option>
+                    </select>
+                  </label>
+                  <label>
+                    Won amount
+                    <input name="wonAmount" value="" inputmode="decimal">
+                  </label>
+                </div>
+
+                <section class="builder-block">
+                  <div class="builder-head">
+                    <h4>Seats</h4>
+                  </div>
+                  <div class="live-seat-grid" aria-label="Live hand seats">
+                    <div class="live-seat-row live-seat-labels">
+                      <span>Seat</span>
+                      <span>Player</span>
+                      <span>Position</span>
+                      <span>Stack</span>
+                    </div>
+                    <div class="live-seat-row" data-live-player-row>
+                      <input data-live-seat value="1" inputmode="numeric" aria-label="Seat 1">
+                      <input data-live-player-name value="Hero" autocomplete="off" aria-label="Seat 1 player">
+                      <select data-live-position aria-label="Seat 1 position">
+                        <option value="BTN">BTN</option>
+                        <option value="SB">SB</option>
+                        <option value="BB">BB</option>
+                        <option value="UTG">UTG</option>
+                        <option value="HJ">HJ</option>
+                        <option value="CO">CO</option>
+                      </select>
+                      <input data-live-stack value="300" inputmode="decimal" aria-label="Seat 1 stack">
+                    </div>
+                    <div class="live-seat-row" data-live-player-row>
+                      <input data-live-seat value="2" inputmode="numeric" aria-label="Seat 2">
+                      <input data-live-player-name value="Villain 1" autocomplete="off" aria-label="Seat 2 player">
+                      <select data-live-position aria-label="Seat 2 position">
+                        <option value="SB">SB</option>
+                        <option value="BB">BB</option>
+                        <option value="UTG">UTG</option>
+                        <option value="HJ">HJ</option>
+                        <option value="CO">CO</option>
+                        <option value="BTN">BTN</option>
+                      </select>
+                      <input data-live-stack value="300" inputmode="decimal" aria-label="Seat 2 stack">
+                    </div>
+                    <div class="live-seat-row" data-live-player-row>
+                      <input data-live-seat value="3" inputmode="numeric" aria-label="Seat 3">
+                      <input data-live-player-name value="Villain 2" autocomplete="off" aria-label="Seat 3 player">
+                      <select data-live-position aria-label="Seat 3 position">
+                        <option value="BB">BB</option>
+                        <option value="UTG">UTG</option>
+                        <option value="HJ">HJ</option>
+                        <option value="CO">CO</option>
+                        <option value="BTN">BTN</option>
+                        <option value="SB">SB</option>
+                      </select>
+                      <input data-live-stack value="300" inputmode="decimal" aria-label="Seat 3 stack">
+                    </div>
+                    <div class="live-seat-row" data-live-player-row>
+                      <input data-live-seat value="4" inputmode="numeric" aria-label="Seat 4">
+                      <input data-live-player-name value="Villain 3" autocomplete="off" aria-label="Seat 4 player">
+                      <select data-live-position aria-label="Seat 4 position">
+                        <option value="UTG">UTG</option>
+                        <option value="HJ">HJ</option>
+                        <option value="CO">CO</option>
+                        <option value="BTN">BTN</option>
+                        <option value="SB">SB</option>
+                        <option value="BB">BB</option>
+                      </select>
+                      <input data-live-stack value="300" inputmode="decimal" aria-label="Seat 4 stack">
+                    </div>
+                    <div class="live-seat-row" data-live-player-row>
+                      <input data-live-seat value="5" inputmode="numeric" aria-label="Seat 5">
+                      <input data-live-player-name value="" autocomplete="off" aria-label="Seat 5 player">
+                      <select data-live-position aria-label="Seat 5 position">
+                        <option value="HJ">HJ</option>
+                        <option value="CO">CO</option>
+                        <option value="BTN">BTN</option>
+                        <option value="SB">SB</option>
+                        <option value="BB">BB</option>
+                        <option value="UTG">UTG</option>
+                      </select>
+                      <input data-live-stack value="" inputmode="decimal" aria-label="Seat 5 stack">
+                    </div>
+                    <div class="live-seat-row" data-live-player-row>
+                      <input data-live-seat value="6" inputmode="numeric" aria-label="Seat 6">
+                      <input data-live-player-name value="" autocomplete="off" aria-label="Seat 6 player">
+                      <select data-live-position aria-label="Seat 6 position">
+                        <option value="CO">CO</option>
+                        <option value="BTN">BTN</option>
+                        <option value="SB">SB</option>
+                        <option value="BB">BB</option>
+                        <option value="UTG">UTG</option>
+                        <option value="HJ">HJ</option>
+                      </select>
+                      <input data-live-stack value="" inputmode="decimal" aria-label="Seat 6 stack">
+                    </div>
+                  </div>
+                </section>
+
+                <section class="builder-block">
+                  <div class="builder-head">
+                    <h4>Actions</h4>
+                  </div>
+                  <div class="live-action-compose">
+                    <select id="live-action-street" aria-label="Action street">
+                      <option value="hole-cards">Preflop</option>
+                      <option value="flop">Flop</option>
+                      <option value="turn">Turn</option>
+                      <option value="river">River</option>
+                      <option value="show-down">Showdown</option>
+                    </select>
+                    <select id="live-action-player" aria-label="Action player"></select>
+                    <select id="live-action-type" aria-label="Action type">
+                      <option value="folds">Folds</option>
+                      <option value="checks">Checks</option>
+                      <option value="calls">Calls</option>
+                      <option value="bets">Bets</option>
+                      <option value="raises">Raises</option>
+                    </select>
+                    <input id="live-action-amount" inputmode="decimal" placeholder="amount" aria-label="Action amount">
+                    <button id="live-add-action" class="button secondary" type="button">Add</button>
+                  </div>
+                  <div id="live-action-list" class="live-action-list"></div>
+                </section>
+
+                <label>
+                  Notes
+                  <textarea name="notes" rows="4"></textarea>
+                </label>
+
+                <div class="form-actions">
+                  <button class="button" type="submit">Save Live Hand</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h3>Current Hand</h3>
+              </div>
+              <div id="live-preview" class="live-preview"></div>
             </section>
           </div>
         </section>

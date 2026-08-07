@@ -70,6 +70,52 @@ GET /api/hands/:id
 
 All query params are optional. `importId` can also be used to read hands from one upload.
 
+## Live Hands
+
+```http
+POST /api/live-hands
+```
+
+Create one hand from live-session input:
+
+```json
+{
+  "sessionId": "sess_...",
+  "name": "River call",
+  "tableName": "Table 12",
+  "stakes": "$1/$3",
+  "hero": "Tao",
+  "heroCards": "Ah Kd",
+  "boardCards": "As 7c 2h Jh 4s",
+  "winner": "Tao",
+  "wonAmount": 85,
+  "players": [
+    {
+      "seat": 1,
+      "name": "Tao",
+      "position": "BTN",
+      "stack": 300
+    },
+    {
+      "seat": 2,
+      "name": "Villain",
+      "position": "BB",
+      "stack": 300
+    }
+  ],
+  "actions": [
+    {
+      "street": "hole-cards",
+      "player": "Tao",
+      "type": "raises",
+      "amount": 12
+    }
+  ]
+}
+```
+
+The server saves the hand using the same internal shape as parsed imports. In AWS mode, live hands are stored immediately as `ready` imports with `source: "live-entry"`.
+
 ## Summary
 
 ```http

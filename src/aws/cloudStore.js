@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { handKey, hashText } from "../core/importIdentity.js";
+import { buildLiveHand } from "../core/liveHandBuilder.js";
 import { buildSessionDetail } from "../core/sessionInsights.js";
 import { buildBankrollSession, summarizeBankrollSessions } from "../core/sessionTracker.js";
 
@@ -205,6 +206,87 @@ export class CloudHandStore {
     }));
 
     return result.Body.transformToString();
+  }
+
+  async createLiveHand(payload) {
+    const { dynamo, s3, sdk } = this.clients;
+    const hand = buildLiveHand(payload);
+    const rawText = JSON.stringify({
+      kind: "live-hand",
+      hand
+    });
+    const rawHash = hashText(rawText);
+    const existingImport = await this.findImportByRawHash(rawHash);
+
+    if (existingImport) {
+      if (payload.sessionId && existingImport.sessionId !== payload.sessionId) {
+        await this.updateImportSession(existingImport.importId, payload.sessionId);
+        existingImport.sessionId = payload.sessionId;
+      }
+
+      const [existingHand] = await this.listHands({ importId: existingImport.importId, limit: 1 });
+      return {
+        import: existingImport,
+        hand: existingHand ?? null,
+        duplicate: true
+      };
+    }
+
+    const importId = createId("imp");
+    const importedAt = new Date().toISOString();
+    const rawKey = rawUploadKey(this.userId, importId);
+    const importRecord = {
+      userId: this.userId,
+      importId,
+      name: payload.name || `Live hand ${hand.handNumber}`,
+      source: "live-entry",
+      sessionId: payload.sessionId || null,
+      status: "ready",
+      handCount: 1,
+      parsedHandCount: 1,
+      skippedCount: 0,
+      rawBytes: Buffer.byteLength(rawText, "utf8"),
+      rawHash,
+      rawKey,
+      importedAt,
+      parsedAt: importedAt
+    };
+    const storedHand = {
+      ...hand,
+      userId: this.userId,
+      handId: createId("hand"),
+      id: undefined,
+      importId,
+      sessionId: importRecord.sessionId,
+      handKey: handKey(hand),
+      importedAt
+    };
+
+    await s3.send(new sdk.PutObjectCommand({
+      Bucket: this.rawBucket,
+      Key: rawKey,
+      Body: rawText,
+      ContentType: "application/json; charset=utf-8",
+      ServerSideEncryption: "AES256"
+    }));
+
+    await dynamo.send(new sdk.PutCommand({
+      TableName: this.importsTable,
+      Item: importRecord,
+      ConditionExpression: "attribute_not_exists(userId) AND attribute_not_exists(importId)"
+    }));
+
+    await dynamo.send(new sdk.PutCommand({
+      TableName: this.handsTable,
+      Item: storedHand,
+      ConditionExpression: "attribute_not_exists(userId) AND attribute_not_exists(handId)"
+    }));
+
+    return {
+      import: publicImport(importRecord),
+      hand: publicHand(storedHand),
+      duplicate: false
+    };
   }
 
   async existingHandKeys() {

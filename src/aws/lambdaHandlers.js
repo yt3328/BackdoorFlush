@@ -113,6 +113,10 @@ export async function api(event) {
       });
     }
 
+    if (pathname === "/api/live-hands" && method === "POST") {
+      return jsonResponse(201, await store.createLiveHand(eventBody(event)));
+    }
+
     const importId = importIdFromPath(pathname);
     if (importId && method === "DELETE") {
       return jsonResponse(200, await store.deleteImport(importId));

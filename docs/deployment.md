@@ -1,6 +1,6 @@
 # Deployment
 
-Version 0.6 keeps the cloud sign-in and static frontend hosting from the earlier AWS version, then connects hand-history imports to bankroll sessions. Local mode still works with `npm start`.
+Version 0.7 keeps the cloud sign-in and static frontend hosting from the earlier AWS version, then adds a live hand builder for hands that do not come from online hand-history exports. Local mode still works with `npm start`.
 
 ## What Deploys
 

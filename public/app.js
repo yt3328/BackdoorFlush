@@ -9,6 +9,14 @@ const streetLabels = {
   river: "River",
   "show-down": "Showdown"
 };
+const viewTitles = {
+  overview: "Overview",
+  sessions: "Sessions",
+  hands: "Hands",
+  live: "Live Hand",
+  equity: "Equity",
+  imports: "Imports"
+};
 
 const emptyBankrollSummary = {
   sessionCount: 0,
@@ -35,6 +43,7 @@ const state = {
   leaks: [],
   selectedSessionId: null,
   selectedHandId: null,
+  liveActions: [],
   replayStep: 0,
   importPollTimer: null
 };
@@ -73,6 +82,18 @@ const elements = {
   importList: document.querySelector("#import-list"),
   importForm: document.querySelector("#import-form"),
   importSession: document.querySelector("#import-session"),
+  liveForm: document.querySelector("#live-hand-form"),
+  liveSession: document.querySelector("#live-session"),
+  liveHero: document.querySelector("#live-hero"),
+  livePlayerRows: [...document.querySelectorAll("[data-live-player-row]")],
+  liveActionStreet: document.querySelector("#live-action-street"),
+  liveActionPlayer: document.querySelector("#live-action-player"),
+  liveActionType: document.querySelector("#live-action-type"),
+  liveActionAmount: document.querySelector("#live-action-amount"),
+  liveAddAction: document.querySelector("#live-add-action"),
+  liveActionList: document.querySelector("#live-action-list"),
+  liveWinner: document.querySelector("#live-winner"),
+  livePreview: document.querySelector("#live-preview"),
   historyFile: document.querySelector("#history-file"),
   clearImportText: document.querySelector("#clear-import-text"),
   equityForm: document.querySelector("#equity-form"),
@@ -203,7 +224,7 @@ function escapeHtml(value) {
 
 function setView(view) {
   state.view = view;
-  elements.title.textContent = view[0].toUpperCase() + view.slice(1);
+  elements.title.textContent = viewTitles[view] ?? view[0].toUpperCase() + view.slice(1);
 
   for (const button of elements.navButtons) {
     button.classList.toggle("active", button.dataset.view === view);
@@ -386,6 +407,102 @@ function renderSessionOptions() {
     ))
   ].join("");
   elements.importSession.value = state.bankrollSessions.some((session) => sessionId(session) === previous) ? previous : "";
+}
+
+function renderLiveSessionOptions() {
+  const previous = elements.liveSession.value;
+  elements.liveSession.innerHTML = [
+    '<option value="">No linked session</option>',
+    ...state.bankrollSessions.map((session) => (
+      `<option value="${escapeHtml(sessionId(session))}">${escapeHtml(sessionLabel(session))}</option>`
+    ))
+  ].join("");
+  elements.liveSession.value = state.bankrollSessions.some((session) => sessionId(session) === previous) ? previous : "";
+}
+
+function livePlayers() {
+  return elements.livePlayerRows
+    .map((row, index) => ({
+      seat: row.querySelector("[data-live-seat]").value || index + 1,
+      name: row.querySelector("[data-live-player-name]").value.trim(),
+      position: row.querySelector("[data-live-position]").value,
+      stack: row.querySelector("[data-live-stack]").value
+    }))
+    .filter((player) => player.name);
+}
+
+function livePlayerNames() {
+  const names = new Set(livePlayers().map((player) => player.name));
+  const hero = elements.liveHero.value.trim();
+  if (hero) {
+    names.add(hero);
+  }
+  return [...names];
+}
+
+function renderLivePlayerOptions() {
+  const names = livePlayerNames();
+  const previousActionPlayer = elements.liveActionPlayer.value;
+  const previousWinner = elements.liveWinner.value;
+  const options = names.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
+
+  elements.liveActionPlayer.innerHTML = options || '<option value="">No players</option>';
+  elements.liveActionPlayer.value = names.includes(previousActionPlayer) ? previousActionPlayer : names[0] ?? "";
+  elements.liveWinner.innerHTML = [
+    '<option value="">No winner recorded</option>',
+    ...names.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+  ].join("");
+  elements.liveWinner.value = names.includes(previousWinner) ? previousWinner : "";
+}
+
+function renderLiveActions() {
+  if (state.liveActions.length === 0) {
+    elements.liveActionList.innerHTML = '<div class="empty compact">No actions yet.</div>';
+    return;
+  }
+
+  elements.liveActionList.innerHTML = state.liveActions
+    .map((action, index) => `
+      <div class="live-action-row">
+        <span>${escapeHtml(streetLabels[action.street] ?? action.street)}</span>
+        <strong>${formatAction(action)}</strong>
+        <button class="button ghost" type="button" data-delete-live-action="${index}">Remove</button>
+      </div>
+    `)
+    .join("");
+}
+
+function renderLivePreview() {
+  const form = new FormData(elements.liveForm);
+  const session = sessionById(elements.liveSession.value);
+  const hero = form.get("hero") || "Hero";
+  const heroCards = String(form.get("heroCards") ?? "").trim().split(/[\s,]+/).filter(Boolean);
+  const board = String(form.get("boardCards") ?? "").trim().split(/[\s,]+/).filter(Boolean);
+  const players = livePlayers();
+
+  elements.livePreview.innerHTML = `
+    <article class="preview-card">
+      <span class="subtle">Session</span>
+      <strong>${escapeHtml(sessionLabel(session))}</strong>
+    </article>
+    <article class="preview-card">
+      <span class="subtle">Hero</span>
+      <strong>${escapeHtml(hero)}</strong>
+      ${renderCards(heroCards)}
+    </article>
+    <article class="preview-card">
+      <span class="subtle">Board</span>
+      ${board.length ? renderCards(board) : "<strong>Not set</strong>"}
+    </article>
+    <article class="preview-card">
+      <span class="subtle">Seats</span>
+      <strong>${players.length}</strong>
+    </article>
+    <article class="preview-card">
+      <span class="subtle">Actions</span>
+      <strong>${state.liveActions.length}</strong>
+    </article>
+  `;
 }
 
 function selectedPlayers() {
@@ -968,6 +1085,10 @@ function render() {
   renderMetrics();
   renderPlayerOptions();
   renderSessionOptions();
+  renderLiveSessionOptions();
+  renderLivePlayerOptions();
+  renderLiveActions();
+  renderLivePreview();
   renderPlayerStats();
   renderCharts();
   renderBankrollCharts();
@@ -1026,6 +1147,54 @@ function readSelectedFile(file) {
 
 elements.navButtons.forEach((button) => {
   button.addEventListener("click", () => setView(button.dataset.view));
+});
+
+elements.livePlayerRows.forEach((row) => {
+  row.addEventListener("input", () => {
+    renderLivePlayerOptions();
+    renderLivePreview();
+  });
+  row.addEventListener("change", () => {
+    renderLivePlayerOptions();
+    renderLivePreview();
+  });
+});
+
+elements.liveForm.addEventListener("input", () => {
+  renderLivePlayerOptions();
+  renderLivePreview();
+});
+
+elements.liveSession.addEventListener("change", renderLivePreview);
+
+elements.liveAddAction.addEventListener("click", () => {
+  const player = elements.liveActionPlayer.value;
+
+  if (!player) {
+    showToast("Add a player before adding an action.");
+    return;
+  }
+
+  state.liveActions.push({
+    street: elements.liveActionStreet.value,
+    player,
+    type: elements.liveActionType.value,
+    amount: elements.liveActionAmount.value.trim() || null
+  });
+  elements.liveActionAmount.value = "";
+  renderLiveActions();
+  renderLivePreview();
+});
+
+elements.liveActionList.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-delete-live-action]");
+  if (!target) {
+    return;
+  }
+
+  state.liveActions.splice(Number(target.dataset.deleteLiveAction), 1);
+  renderLiveActions();
+  renderLivePreview();
 });
 
 elements.loadDemo.addEventListener("click", async () => {
@@ -1269,6 +1438,47 @@ elements.bankrollCancel.addEventListener("click", () => {
   state.selectedSessionId = null;
   resetBankrollForm();
   renderSessions();
+});
+
+elements.liveForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+
+  try {
+    const payload = await api("/api/live-hands", {
+      method: "POST",
+      body: {
+        sessionId: form.get("sessionId"),
+        name: form.get("name"),
+        tableName: form.get("tableName"),
+        stakes: form.get("stakes"),
+        handNumber: form.get("handNumber"),
+        hero: form.get("hero"),
+        heroCards: form.get("heroCards"),
+        boardCards: form.get("boardCards"),
+        winner: form.get("winner"),
+        wonAmount: form.get("wonAmount"),
+        players: livePlayers(),
+        actions: state.liveActions,
+        notes: form.get("notes")
+      }
+    });
+
+    state.liveActions = [];
+    await refresh({ quiet: true });
+    if (payload.hand?.id) {
+      state.selectedHandId = payload.hand.id;
+      state.replayStep = 0;
+    }
+    if (payload.hand?.sessionId) {
+      state.selectedSessionId = payload.hand.sessionId;
+    }
+    render();
+    setView("hands");
+    showToast(payload.duplicate ? "Live hand was already saved." : "Live hand saved.");
+  } catch (error) {
+    showToast(error.message);
+  }
 });
 
 elements.importForm.addEventListener("submit", async (event) => {

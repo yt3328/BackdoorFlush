@@ -93,6 +93,12 @@ export function createHttpServer({ store }) {
         return;
       }
 
+      if (requestUrl.pathname === "/api/live-hands" && request.method === "POST") {
+        const payload = await readJsonBody(request);
+        sendJson(response, 201, store.createLiveHand(payload));
+        return;
+      }
+
       const importId = importIdFromPath(requestUrl.pathname);
       if (importId && request.method === "DELETE") {
         sendJson(response, 200, store.deleteImport(importId));
@@ -266,6 +272,8 @@ export function createHttpServer({ store }) {
       const badRequest =
         error instanceof SyntaxError ||
         error.message.includes("Invalid") ||
+        error.message.includes("At least") ||
+        error.message.includes("appears") ||
         error.message.includes("required") ||
         error.message.includes("expects") ||
         error.message.includes("cannot") ||

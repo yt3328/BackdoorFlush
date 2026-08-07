@@ -88,6 +88,8 @@ export function handleError(error) {
   const badRequest =
     error instanceof SyntaxError ||
     error.message.includes("Invalid") ||
+    error.message.includes("At least") ||
+    error.message.includes("appears") ||
     error.message.includes("required") ||
     error.message.includes("expects") ||
     error.message.includes("cannot") ||

@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { mkdirSync } from "node:fs";
 import { handKey, hashText } from "../core/importIdentity.js";
+import { buildLiveHand } from "../core/liveHandBuilder.js";
 import { buildSessionDetail } from "../core/sessionInsights.js";
 import { buildBankrollSession, summarizeBankrollSessions } from "../core/sessionTracker.js";
 
@@ -122,6 +123,26 @@ export class HandStore {
 
   listImports() {
     return [...this.state.imports];
+  }
+
+  createLiveHand(payload) {
+    const hand = buildLiveHand(payload);
+    const result = this.addImport({
+      name: payload.name || `Live hand ${hand.handNumber}`,
+      source: "live-entry",
+      rawText: JSON.stringify({
+        kind: "live-hand",
+        hand
+      }),
+      hands: [hand],
+      sessionId: payload.sessionId
+    });
+
+    return {
+      import: result.import,
+      hand: result.hands[0] ?? null,
+      duplicate: Boolean(result.duplicate)
+    };
   }
 
   listHands({ limit = 100, player, position, importId, sessionId } = {}) {
