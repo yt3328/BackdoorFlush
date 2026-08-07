@@ -46,7 +46,8 @@ async function createImport(request, response, store) {
     name: payload.name,
     source: payload.source,
     rawText,
-    hands
+    hands,
+    sessionId: payload.sessionId
   });
 
   sendJson(response, result.duplicate ? 200 : 201, {
@@ -98,6 +99,12 @@ export function createHttpServer({ store }) {
         return;
       }
 
+      if (importId && request.method === "PATCH") {
+        const payload = await readJsonBody(request);
+        sendJson(response, 200, store.updateImportSession(importId, payload.sessionId));
+        return;
+      }
+
       if (requestUrl.pathname === "/api/demo") {
         if (!methodAllowed(request, response, "POST")) {
           return;
@@ -109,7 +116,8 @@ export function createHttpServer({ store }) {
           name: "Small table sample",
           source: "sample",
           rawText,
-          hands
+          hands,
+          sessionId: requestUrl.searchParams.get("sessionId")
         });
 
         sendJson(response, result.duplicate ? 200 : 201, {
@@ -130,7 +138,9 @@ export function createHttpServer({ store }) {
           hands: store.listHands({
             limit: parseLimit(requestUrl.searchParams.get("limit")),
             player: requestUrl.searchParams.get("player"),
-            position: requestUrl.searchParams.get("position")
+            position: requestUrl.searchParams.get("position"),
+            importId: requestUrl.searchParams.get("importId"),
+            sessionId: requestUrl.searchParams.get("sessionId")
           })
         });
         return;
@@ -194,6 +204,26 @@ export function createHttpServer({ store }) {
       }
 
       const bankrollSessionId = bankrollSessionIdFromPath(requestUrl.pathname);
+      if (bankrollSessionId && request.method === "GET") {
+        const detail = store.bankrollSessionDetail(bankrollSessionId);
+
+        if (!detail) {
+          sendError(response, 404, "Bankroll session not found.");
+          return;
+        }
+
+        sendJson(response, 200, detail);
+        return;
+      }
+
+      if (bankrollSessionId && request.method === "PATCH") {
+        const payload = await readJsonBody(request);
+        sendJson(response, 200, {
+          session: store.updateBankrollSession(bankrollSessionId, payload)
+        });
+        return;
+      }
+
       if (bankrollSessionId && request.method === "DELETE") {
         sendJson(response, 200, store.deleteBankrollSession(bankrollSessionId));
         return;

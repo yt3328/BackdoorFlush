@@ -40,7 +40,8 @@ async function createImportFromText({ store, payload }) {
   const result = await store.createQueuedImport({
     name: payload.name,
     source: payload.source,
-    rawText: payload.rawText
+    rawText: payload.rawText,
+    sessionId: payload.sessionId
   });
 
   return jsonResponse(result.duplicate ? 200 : 202, {
@@ -117,13 +118,18 @@ export async function api(event) {
       return jsonResponse(200, await store.deleteImport(importId));
     }
 
+    if (importId && method === "PATCH") {
+      return jsonResponse(200, await store.updateImportSession(importId, eventBody(event).sessionId));
+    }
+
     if (pathname === "/api/demo" && method === "POST") {
       return createImportFromText({
         store,
         payload: {
           name: "Small table sample",
           source: "sample",
-          rawText: readFileSync(samplePath, "utf8")
+          rawText: readFileSync(samplePath, "utf8"),
+          sessionId: queryValue(event, "sessionId")
         }
       });
     }
@@ -133,7 +139,9 @@ export async function api(event) {
         hands: await store.listHands({
           limit: parseLimit(queryValue(event, "limit")),
           player: queryValue(event, "player"),
-          position: queryValue(event, "position")
+          position: queryValue(event, "position"),
+          importId: queryValue(event, "importId"),
+          sessionId: queryValue(event, "sessionId")
         })
       });
     }
@@ -186,6 +194,26 @@ export async function api(event) {
     }
 
     const bankrollSessionId = bankrollSessionIdFromPath(pathname);
+    if (bankrollSessionId && method === "GET") {
+      const detail = await store.bankrollSessionDetail(bankrollSessionId);
+
+      if (!detail) {
+        return jsonResponse(404, {
+          error: {
+            message: "Bankroll session not found."
+          }
+        });
+      }
+
+      return jsonResponse(200, detail);
+    }
+
+    if (bankrollSessionId && method === "PATCH") {
+      return jsonResponse(200, {
+        session: await store.updateBankrollSession(bankrollSessionId, eventBody(event))
+      });
+    }
+
     if (bankrollSessionId && method === "DELETE") {
       return jsonResponse(200, await store.deleteBankrollSession(bankrollSessionId));
     }
@@ -229,7 +257,8 @@ export async function processParseQueue(event) {
       const result = await store.saveParsedImport({
         importId: message.importId,
         rawText,
-        hands
+        hands,
+        sessionId: message.sessionId
       });
       results.push({
         importId: message.importId,

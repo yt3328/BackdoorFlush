@@ -19,6 +19,7 @@ flowchart LR
   Parser --> Dynamo["DynamoDB hands table"]
   ReadLambda --> Dynamo
   SessionLambda --> SessionsDynamo["DynamoDB sessions table"]
+  SessionLambda --> Dynamo
   EquityLambda --> Model["Local calculator or SageMaker endpoint"]
 ```
 
@@ -39,6 +40,7 @@ flowchart LR
 - SQS buffers parse jobs so large uploads do not block requests.
 - DynamoDB stores parsed hand records keyed by the signed-in user's Cognito subject.
 - DynamoDB stores bankroll sessions in a separate table keyed by the same signed-in user.
+- Imports and hands can carry a `sessionId`, which lets one bankroll record open into its linked hand review.
 - CloudWatch alarms track API and parse worker errors.
 - SageMaker can be added later for recommendation or clustering work.
 
@@ -50,6 +52,7 @@ Parsed hands should eventually include:
 
 - `userId`
 - `importId`
+- `sessionId`
 - `handNumber`
 - `tableName`
 - `players`
@@ -77,6 +80,19 @@ Bankroll sessions include:
 - `bbPerHour`
 - `notes`
 
-## Version 0.5 Boundaries
+Imports include:
 
-The cloud backend and frontend host are deployed with SAM. The dashboard files are still plain static assets, so publishing the frontend is a separate `aws s3 sync` step after the stack is updated and `public/config.js` contains the API and Cognito outputs. v0.5 does not yet link imported hands directly to bankroll session records; that relationship can be added on top of the new session table.
+- `userId`
+- `importId`
+- `sessionId`
+- `name`
+- `source`
+- `status`
+- `handCount`
+- `rawHash`
+- `rawKey`
+- `importedAt`
+
+## Version 0.6 Boundaries
+
+The cloud backend and frontend host are deployed with SAM. The dashboard files are still plain static assets, so publishing the frontend is a separate `aws s3 sync` step after the stack is updated and `public/config.js` contains the API and Cognito outputs. v0.6 links imports and parsed hands to bankroll sessions, but session detail still works from the latest stored hand data rather than a precomputed analytics table.

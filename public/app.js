@@ -33,6 +33,7 @@ const state = {
   bankrollSummary: emptyBankrollSummary,
   players: [],
   leaks: [],
+  selectedSessionId: null,
   selectedHandId: null,
   replayStep: 0,
   importPollTimer: null
@@ -63,10 +64,15 @@ const elements = {
   handList: document.querySelector("#hand-list"),
   handDetail: document.querySelector("#hand-detail"),
   bankrollForm: document.querySelector("#bankroll-form"),
+  bankrollFormTitle: document.querySelector("#bankroll-form-title"),
+  bankrollSubmit: document.querySelector("#bankroll-submit"),
+  bankrollCancel: document.querySelector("#bankroll-cancel"),
   sessionList: document.querySelector("#session-list"),
   sessionSummary: document.querySelector("#session-summary"),
+  sessionDetail: document.querySelector("#session-detail"),
   importList: document.querySelector("#import-list"),
   importForm: document.querySelector("#import-form"),
+  importSession: document.querySelector("#import-session"),
   historyFile: document.querySelector("#history-file"),
   clearImportText: document.querySelector("#clear-import-text"),
   equityForm: document.querySelector("#equity-form"),
@@ -139,6 +145,7 @@ function clearDashboardData() {
   state.bankrollSummary = emptyBankrollSummary;
   state.players = [];
   state.leaks = [];
+  state.selectedSessionId = null;
   state.selectedHandId = null;
   state.replayStep = 0;
 }
@@ -254,6 +261,41 @@ function formatDate(value) {
   });
 }
 
+function sessionId(session) {
+  return session?.sessionId ?? session?.id ?? "";
+}
+
+function sessionById(id) {
+  return state.bankrollSessions.find((session) => sessionId(session) === id) ?? null;
+}
+
+function sessionLabel(session) {
+  if (!session) {
+    return "No linked session";
+  }
+
+  return `${formatDate(session.date)} ${session.location} ${session.stakes || session.gameType}`.trim();
+}
+
+function importsForSession(id) {
+  return state.imports.filter((item) => item.sessionId === id);
+}
+
+function handsForSession(id) {
+  return state.hands.filter((hand) => hand.sessionId === id);
+}
+
+function estimatedHeroResult(hand) {
+  if (!hand.hero) {
+    return 0;
+  }
+
+  const committed = hand.actions
+    .filter((action) => action.player === hand.hero)
+    .reduce((sum, action) => sum + (Number(action.amount) || 0), 0);
+  return Number(((Number(hand.winnings?.[hand.hero]) || 0) - committed).toFixed(2));
+}
+
 function renderSparkline(points) {
   if (!points.length) {
     return '<div class="empty">No bankroll sessions yet.</div>';
@@ -333,6 +375,17 @@ function renderPlayerOptions() {
     ...state.players.map((player) => `<option value="${escapeHtml(player.player)}">${escapeHtml(player.player)}</option>`)
   ].join("");
   elements.playerFilter.value = state.players.some((player) => player.player === previous) ? previous : "";
+}
+
+function renderSessionOptions() {
+  const previous = elements.importSession.value;
+  elements.importSession.innerHTML = [
+    '<option value="">No linked session</option>',
+    ...state.bankrollSessions.map((session) => (
+      `<option value="${escapeHtml(sessionId(session))}">${escapeHtml(sessionLabel(session))}</option>`
+    ))
+  ].join("");
+  elements.importSession.value = state.bankrollSessions.some((session) => sessionId(session) === previous) ? previous : "";
 }
 
 function selectedPlayers() {
@@ -520,32 +573,144 @@ function renderSessionSummary() {
   `;
 }
 
+function resetBankrollForm() {
+  elements.bankrollForm.reset();
+  elements.bankrollForm.elements.date.value = new Date().toISOString().slice(0, 10);
+  elements.bankrollForm.elements.location.value = "PokerStars";
+  elements.bankrollForm.elements.gameType.value = "cash";
+  elements.bankrollForm.elements.stakes.value = "$0.05/$0.10";
+  elements.bankrollForm.elements.tableSize.value = "6";
+  elements.bankrollForm.elements.hours.value = "2.5";
+  elements.bankrollForm.elements.buyIn.value = "50";
+  elements.bankrollForm.elements.cashOut.value = "64";
+  elements.bankrollForm.elements.bigBlind.value = "0.10";
+  elements.bankrollForm.dataset.editingSessionId = "";
+  elements.bankrollFormTitle.textContent = "New Session";
+  elements.bankrollSubmit.textContent = "Add Session";
+  elements.bankrollCancel.hidden = true;
+}
+
+function fillBankrollForm(session) {
+  elements.bankrollForm.elements.date.value = session.date ?? "";
+  elements.bankrollForm.elements.location.value = session.location ?? "";
+  elements.bankrollForm.elements.gameType.value = session.gameType ?? "cash";
+  elements.bankrollForm.elements.stakes.value = session.stakes ?? "";
+  elements.bankrollForm.elements.tableSize.value = session.tableSize ?? "";
+  elements.bankrollForm.elements.hours.value = session.hours ?? "";
+  elements.bankrollForm.elements.buyIn.value = session.buyIn ?? "";
+  elements.bankrollForm.elements.cashOut.value = session.cashOut ?? "";
+  elements.bankrollForm.elements.profit.value =
+    session.buyIn === null && session.cashOut === null ? session.profit ?? "" : "";
+  elements.bankrollForm.elements.bigBlind.value = session.bigBlind ?? "";
+  elements.bankrollForm.elements.notes.value = session.notes ?? "";
+  elements.bankrollForm.dataset.editingSessionId = sessionId(session);
+  elements.bankrollFormTitle.textContent = "Edit Session";
+  elements.bankrollSubmit.textContent = "Save Session";
+  elements.bankrollCancel.hidden = false;
+}
+
+function renderSessionDetail() {
+  const selectedSession = sessionById(state.selectedSessionId);
+
+  if (!selectedSession) {
+    elements.sessionDetail.innerHTML = '<div class="empty">Select a session to see linked imports and hands.</div>';
+    return;
+  }
+
+  const id = sessionId(selectedSession);
+  const linkedImports = importsForSession(id);
+  const linkedHands = handsForSession(id);
+  const estimatedResult = linkedHands.reduce((sum, hand) => sum + estimatedHeroResult(hand), 0);
+  const spots = linkedHands
+    .map((hand) => ({
+      hand,
+      result: estimatedHeroResult(hand)
+    }))
+    .sort((a, b) => Math.abs(b.result) - Math.abs(a.result))
+    .slice(0, 6);
+
+  elements.sessionDetail.innerHTML = `
+    <section class="session-detail-card">
+      <div class="session-detail-head">
+        <div>
+          <span class="subtle">Selected session</span>
+          <strong>${escapeHtml(sessionLabel(selectedSession))}</strong>
+        </div>
+        <span class="pill">${linkedHands.length} hands</span>
+      </div>
+      <div class="detail-summary compact">
+        <div>
+          <span class="subtle">Logged result</span>
+          <strong>${formatCurrency(selectedSession.profit, { signed: true })}</strong>
+        </div>
+        <div>
+          <span class="subtle">Estimated from hands</span>
+          <strong>${formatCurrency(estimatedResult, { signed: true })}</strong>
+        </div>
+      </div>
+      <div class="linked-section">
+        <h4>Linked Imports</h4>
+        ${
+          linkedImports.length
+            ? linkedImports.map((item) => `<p>${escapeHtml(item.name)} / ${item.handCount} hands / ${escapeHtml(item.status ?? "ready")}</p>`).join("")
+            : '<p class="muted-line">No imports linked yet.</p>'
+        }
+      </div>
+      <div class="linked-section">
+        <h4>Review Hands</h4>
+        ${
+          spots.length
+            ? spots.map(({ hand, result }) => `
+                <button class="linked-hand" type="button" data-open-hand="${escapeHtml(hand.id)}">
+                  <span>#${escapeHtml(hand.handNumber)} / ${escapeHtml(hand.tableName ?? "Table")}</span>
+                  <strong>${formatCurrency(result, { signed: true })}</strong>
+                </button>
+              `).join("")
+            : '<p class="muted-line">Linked hands appear here after an import finishes parsing.</p>'
+        }
+      </div>
+    </section>
+  `;
+}
+
 function renderSessions() {
   renderSessionSummary();
 
   if (state.bankrollSessions.length === 0) {
     elements.sessionList.innerHTML = '<div class="empty">No bankroll sessions yet.</div>';
+    renderSessionDetail();
     return;
   }
 
   elements.sessionList.innerHTML = state.bankrollSessions
     .map(
-      (session) => `
-        <article class="session-row">
+      (session) => {
+        const id = sessionId(session);
+        const linkedHands = handsForSession(id).length;
+        const active = id === state.selectedSessionId ? "active" : "";
+
+        return `
+        <article class="session-row ${active}" data-select-bankroll-session="${escapeHtml(id)}">
           <div>
             <div class="session-row-title">
               <strong>${escapeHtml(session.location)}</strong>
               <span class="pill">${escapeHtml(session.stakes || session.gameType)}</span>
             </div>
             <p>${escapeHtml(formatDate(session.date))} / ${escapeHtml(session.gameType)} / ${formatNumber(session.hours, 1)}h</p>
-            <p>${formatCurrency(session.profit, { signed: true })} / ${formatNumber(session.bbPerHour, 1)} bb/hr / ${formatCurrency(session.hourlyRate, { signed: true })}/hr</p>
+            <p>${formatCurrency(session.profit, { signed: true })} / ${formatNumber(session.bbPerHour, 1)} bb/hr / ${linkedHands} linked hands</p>
             ${session.notes ? `<p>${escapeHtml(session.notes)}</p>` : ""}
           </div>
-          <button class="button danger" type="button" data-delete-bankroll-session="${escapeHtml(session.id)}">Delete</button>
+          <div class="row-actions">
+            <button class="button secondary" type="button" data-edit-bankroll-session="${escapeHtml(id)}">Edit</button>
+            <button class="button danger" type="button" data-delete-bankroll-session="${escapeHtml(id)}">Delete</button>
+          </div>
         </article>
-      `
+        `;
+      }
     )
     .join("");
+
+  renderSessionDetail();
 }
 
 function filteredHands() {
@@ -753,6 +918,7 @@ function renderImports() {
   elements.importList.innerHTML = state.imports
     .map((item) => {
       const status = item.status ?? "ready";
+      const linkedSession = sessionById(item.sessionId);
       const statusLine =
         status === "queued"
           ? "Queued for parsing"
@@ -765,9 +931,17 @@ function renderImports() {
           <div>
             <strong>${escapeHtml(item.name)}</strong>
             <p><span class="status ${escapeHtml(status)}">${escapeHtml(status)}</span> ${statusLine}</p>
-            <p>${item.skippedCount ?? 0} duplicate hands skipped</p>
+            <p>${item.skippedCount ?? 0} duplicate hands skipped / ${escapeHtml(sessionLabel(linkedSession))}</p>
           </div>
-          <button class="button danger" type="button" data-delete-import="${escapeHtml(item.id)}" ${status === "queued" ? "disabled" : ""}>Delete</button>
+          <div class="row-actions import-actions">
+            <select data-import-session="${escapeHtml(item.id)}" aria-label="Linked bankroll session">
+              <option value="">No linked session</option>
+              ${state.bankrollSessions.map((session) => `
+                <option value="${escapeHtml(sessionId(session))}" ${sessionId(session) === item.sessionId ? "selected" : ""}>${escapeHtml(sessionLabel(session))}</option>
+              `).join("")}
+            </select>
+            <button class="button danger" type="button" data-delete-import="${escapeHtml(item.id)}" ${status === "queued" ? "disabled" : ""}>Delete</button>
+          </div>
         </article>
       `;
     })
@@ -776,6 +950,10 @@ function renderImports() {
 
 function render() {
   renderAuthState();
+
+  if (state.selectedSessionId && !state.bankrollSessions.some((session) => sessionId(session) === state.selectedSessionId)) {
+    state.selectedSessionId = null;
+  }
 
   if (state.selectedHandId && !state.hands.some((hand) => hand.id === state.selectedHandId)) {
     state.selectedHandId = null;
@@ -789,6 +967,7 @@ function render() {
 
   renderMetrics();
   renderPlayerOptions();
+  renderSessionOptions();
   renderPlayerStats();
   renderCharts();
   renderBankrollCharts();
@@ -851,7 +1030,8 @@ elements.navButtons.forEach((button) => {
 
 elements.loadDemo.addEventListener("click", async () => {
   try {
-    const payload = await api("/api/demo", { method: "POST" });
+    const sessionParam = state.selectedSessionId ? `?sessionId=${encodeURIComponent(state.selectedSessionId)}` : "";
+    const payload = await api(`/api/demo${sessionParam}`, { method: "POST" });
     await refresh();
     showToast(
       payload.duplicate
@@ -950,6 +1130,26 @@ elements.importList.addEventListener("click", async (event) => {
   }
 });
 
+elements.importList.addEventListener("change", async (event) => {
+  const target = event.target.closest("[data-import-session]");
+  if (!target) {
+    return;
+  }
+
+  try {
+    const payload = await api(`/api/imports/${encodeURIComponent(target.dataset.importSession)}`, {
+      method: "PATCH",
+      body: {
+        sessionId: target.value
+      }
+    });
+    await refresh();
+    showToast(`Linked ${payload.updatedHands} hands.`);
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
 elements.historyFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
   if (!file) {
@@ -975,10 +1175,15 @@ elements.clearImportText.addEventListener("click", () => {
 elements.bankrollForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
+  const editingSessionId = elements.bankrollForm.dataset.editingSessionId;
 
   try {
-    const payload = await api("/api/bankroll/sessions", {
-      method: "POST",
+    const payload = await api(
+      editingSessionId
+        ? `/api/bankroll/sessions/${encodeURIComponent(editingSessionId)}`
+        : "/api/bankroll/sessions",
+      {
+      method: editingSessionId ? "PATCH" : "POST",
       body: {
         date: form.get("date"),
         location: form.get("location"),
@@ -993,28 +1198,77 @@ elements.bankrollForm.addEventListener("submit", async (event) => {
         notes: form.get("notes")
       }
     });
+    state.selectedSessionId = payload.session.id;
     await refresh();
-    showToast(`Added ${formatCurrency(payload.session.profit, { signed: true })} session.`);
+    fillBankrollForm(sessionById(state.selectedSessionId) ?? payload.session);
+    showToast(`${editingSessionId ? "Saved" : "Added"} ${formatCurrency(payload.session.profit, { signed: true })} session.`);
   } catch (error) {
     showToast(error.message);
   }
 });
 
 elements.sessionList.addEventListener("click", async (event) => {
-  const target = event.target.closest("[data-delete-bankroll-session]");
-  if (!target || !window.confirm("Delete this bankroll session?")) {
+  const deleteTarget = event.target.closest("[data-delete-bankroll-session]");
+  if (deleteTarget) {
+    if (!window.confirm("Delete this bankroll session? Linked imports will stay imported, but become unlinked.")) {
+      return;
+    }
+
+    try {
+      const payload = await api(`/api/bankroll/sessions/${encodeURIComponent(deleteTarget.dataset.deleteBankrollSession)}`, {
+        method: "DELETE"
+      });
+      if (state.selectedSessionId === deleteTarget.dataset.deleteBankrollSession) {
+        state.selectedSessionId = null;
+        resetBankrollForm();
+      }
+      await refresh();
+      showToast(`Deleted ${formatCurrency(payload.session.profit, { signed: true })} session.`);
+    } catch (error) {
+      showToast(error.message);
+    }
     return;
   }
 
-  try {
-    const payload = await api(`/api/bankroll/sessions/${encodeURIComponent(target.dataset.deleteBankrollSession)}`, {
-      method: "DELETE"
-    });
-    await refresh();
-    showToast(`Deleted ${formatCurrency(payload.session.profit, { signed: true })} session.`);
-  } catch (error) {
-    showToast(error.message);
+  const editTarget = event.target.closest("[data-edit-bankroll-session]");
+  if (editTarget) {
+    const session = sessionById(editTarget.dataset.editBankrollSession);
+    if (session) {
+      state.selectedSessionId = sessionId(session);
+      fillBankrollForm(session);
+      renderSessions();
+    }
+    return;
   }
+
+  const rowTarget = event.target.closest("[data-select-bankroll-session]");
+  if (rowTarget) {
+    state.selectedSessionId = rowTarget.dataset.selectBankrollSession;
+    const session = sessionById(state.selectedSessionId);
+    if (session) {
+      fillBankrollForm(session);
+    }
+    renderSessions();
+  }
+});
+
+elements.sessionDetail.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-open-hand]");
+  if (!target) {
+    return;
+  }
+
+  state.selectedHandId = target.dataset.openHand;
+  state.replayStep = 0;
+  setView("hands");
+  renderHands();
+  renderHandDetail();
+});
+
+elements.bankrollCancel.addEventListener("click", () => {
+  state.selectedSessionId = null;
+  resetBankrollForm();
+  renderSessions();
 });
 
 elements.importForm.addEventListener("submit", async (event) => {
@@ -1027,7 +1281,8 @@ elements.importForm.addEventListener("submit", async (event) => {
       body: {
         name: form.get("name"),
         source: form.get("source"),
-        rawText: form.get("rawText")
+        rawText: form.get("rawText"),
+        sessionId: form.get("sessionId")
       }
     });
     await refresh();

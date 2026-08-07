@@ -455,6 +455,16 @@ th {
   box-shadow: 0 0 0 3px rgba(15, 107, 79, 0.12);
 }
 
+.session-row {
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.session-row:hover,
+.session-row.active {
+  border-color: var(--felt);
+  box-shadow: 0 0 0 3px rgba(15, 107, 79, 0.1);
+}
+
 .import-row,
 .session-row {
   display: flex;
@@ -578,6 +588,10 @@ th {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.form-actions [hidden] {
+  display: none;
 }
 
 .form label {
@@ -767,6 +781,80 @@ th {
   display: block;
   margin-top: 4px;
   font-size: 1.2rem;
+}
+
+.session-detail {
+  padding: 0 16px 16px;
+}
+
+.session-detail-card {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+}
+
+.session-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.session-detail-head strong {
+  display: block;
+}
+
+.detail-summary.compact {
+  margin-bottom: 0;
+}
+
+.linked-section {
+  display: grid;
+  gap: 8px;
+}
+
+.linked-section h4,
+.linked-section p {
+  margin: 0;
+}
+
+.linked-section h4 {
+  font-size: 0.9rem;
+}
+
+.linked-section p,
+.muted-line {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.linked-hand {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.linked-hand:hover {
+  border-color: var(--felt);
+}
+
+.import-actions {
+  min-width: min(300px, 42%);
+}
+
+.import-actions select {
+  min-width: 180px;
 }
 
 .hand-detail {

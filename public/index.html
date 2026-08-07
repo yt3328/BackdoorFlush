@@ -173,7 +173,7 @@
           <div class="split sessions-workspace">
             <section class="panel">
               <div class="panel-head">
-                <h3>New Session</h3>
+                <h3 id="bankroll-form-title">New Session</h3>
               </div>
               <form id="bankroll-form" class="form session-form">
                 <div class="form-grid">
@@ -227,7 +227,8 @@
                   <textarea name="notes" rows="5"></textarea>
                 </label>
                 <div class="form-actions">
-                  <button class="button" type="submit">Add Session</button>
+                  <button id="bankroll-submit" class="button" type="submit">Add Session</button>
+                  <button id="bankroll-cancel" class="button secondary" type="button" hidden>New Session</button>
                 </div>
               </form>
             </section>
@@ -238,6 +239,7 @@
               </div>
               <div id="session-summary" class="session-summary"></div>
               <div id="session-list" class="session-list"></div>
+              <div id="session-detail" class="session-detail"></div>
             </section>
           </div>
         </section>
@@ -317,6 +319,12 @@
                 <label>
                   Source
                   <input name="source" value="hand-history-text">
+                </label>
+                <label>
+                  Bankroll session
+                  <select id="import-session" name="sessionId">
+                    <option value="">No linked session</option>
+                  </select>
                 </label>
                 <label>
                   Hand history text

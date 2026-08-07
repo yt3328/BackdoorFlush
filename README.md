@@ -4,7 +4,7 @@ PokerFeltScope is a small hand-history desk for reviewing poker sessions.
 
 The local app lets you upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, track bankroll sessions, and run quick equity checks.
 
-Version 0.5 adds a bankroll/session tracker and a visual hand replayer on top of the authenticated cloud dashboard.
+Version 0.6 links imported hand histories to bankroll sessions, so a session can show both the logged result and the hands that produced the review spots.
 
 ## Run it
 
@@ -32,6 +32,8 @@ Local mode:
 - Shows VPIP, PFR, 3-bet rate, aggression factor, position splits, and compact charts.
 - Tracks poker sessions with location, stakes, hours, buy-ins, cash-outs, results, hourly rate, and bb/hr.
 - Shows bankroll curve and location-level session charts.
+- Links imports to bankroll sessions when uploading, from the import log, or through the sample loader.
+- Opens a session detail view with linked imports, linked hands, and estimated hero results from parsed actions.
 - Replays parsed actions on a visual table with step controls.
 - Flags a few basic review signals from the current sample.
 - Runs a Monte Carlo equity check for 2-card Hold'em hands.
@@ -59,6 +61,7 @@ curl http://localhost:3400/api/hands
 curl http://localhost:3400/api/stats/summary
 curl http://localhost:3400/api/leaks
 curl http://localhost:3400/api/bankroll/summary
+curl http://localhost:3400/api/bankroll/sessions
 curl -X DELETE http://localhost:3400/api/session
 ```
 
@@ -81,6 +84,7 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 - `src/core/stats.js` computes player summaries and review signals.
 - `src/core/equity.js` runs the Hold'em equity calculator.
 - `src/core/sessionTracker.js` normalizes bankroll sessions and summary stats.
+- `src/core/sessionInsights.js` combines bankroll sessions with linked imports and hands.
 - `src/http/apiServer.js` exposes the local API and serves the dashboard.
 - `src/storage/handStore.js` keeps local state.
 - `src/aws/` contains Lambda handlers and AWS data adapters.
@@ -93,5 +97,5 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 ## Next
 
 - Support more hand-history formats and larger real-world exports.
-- Connect imported hand histories directly to bankroll session records.
+- Add richer filters inside the session detail view.
 - Replace the first-pass review rules with a larger recommendation engine.

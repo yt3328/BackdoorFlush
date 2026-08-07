@@ -21,6 +21,7 @@ Returns service status.
 ```http
 GET /api/imports
 POST /api/imports
+PATCH /api/imports/:id
 DELETE /api/imports/:id
 ```
 
@@ -30,7 +31,8 @@ Create an import:
 {
   "name": "Sunday session",
   "source": "pokerstars-text",
-  "rawText": "PokerStars Hand #..."
+  "rawText": "PokerStars Hand #...",
+  "sessionId": "sess_..."
 }
 ```
 
@@ -40,10 +42,19 @@ Exact duplicate uploads return the existing import with `duplicate: true`. Overl
 
 In AWS mode, `POST /api/imports` returns `202` for a new upload because parsing happens asynchronously through SQS. Poll `GET /api/imports` until the import status becomes `ready` or `failed`.
 
+Move an existing import to a bankroll session, or send an empty `sessionId` to unlink it:
+
+```json
+{
+  "sessionId": "sess_..."
+}
+```
+
 ## Demo
 
 ```http
 POST /api/demo
+POST /api/demo?sessionId=sess_...
 ```
 
 Loads `samples/pokerstars-small.txt`.
@@ -53,11 +64,11 @@ Repeated calls do not duplicate the sample hands.
 ## Hands
 
 ```http
-GET /api/hands?limit=100&player=Tao&position=BTN
+GET /api/hands?limit=100&player=Tao&position=BTN&sessionId=sess_...
 GET /api/hands/:id
 ```
 
-All query params are optional.
+All query params are optional. `importId` can also be used to read hands from one upload.
 
 ## Summary
 
@@ -90,6 +101,8 @@ Clears imported hand-history records and parsed hands. Bankroll records are pres
 ```http
 GET /api/bankroll/sessions
 POST /api/bankroll/sessions
+GET /api/bankroll/sessions/:id
+PATCH /api/bankroll/sessions/:id
 DELETE /api/bankroll/sessions/:id
 GET /api/bankroll/summary
 ```
@@ -111,6 +124,8 @@ Create a bankroll session:
 ```
 
 The server calculates `profit`, `bbWon`, `hourlyRate`, and `bbPerHour`. If `profit` is sent directly, it overrides the buy-in/cash-out calculation.
+
+`GET /api/bankroll/sessions/:id` returns the session, linked imports, linked hands, player summaries, review signals, and the biggest estimated hero wins/losses for that session.
 
 ## Equity
 

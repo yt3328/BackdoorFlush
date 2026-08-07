@@ -183,6 +183,113 @@ test("bankroll session endpoints create, summarize, and delete sessions", async 
   assert.equal(deletePayload.session.id, createPayload.session.id);
 });
 
+test("imports can be linked to, moved between, and unlinked from bankroll sessions", async () => {
+  const firstSessionResponse = await dispatch({
+    method: "POST",
+    url: "/api/bankroll/sessions",
+    body: {
+      date: "2026-07-24",
+      location: "PokerStars",
+      stakes: "$0.05/$0.10",
+      hours: 2.5,
+      buyIn: 50,
+      cashOut: 64
+    }
+  });
+  const secondSessionResponse = await dispatch({
+    method: "POST",
+    url: "/api/bankroll/sessions",
+    body: {
+      date: "2026-07-25",
+      location: "Home game",
+      stakes: "$1/$2",
+      hours: 4,
+      profit: -80
+    }
+  });
+  const firstSession = (await firstSessionResponse.json()).session;
+  const secondSession = (await secondSessionResponse.json()).session;
+  const importResponse = await dispatch({
+    method: "POST",
+    url: `/api/demo?sessionId=${encodeURIComponent(firstSession.id)}`
+  });
+  const importPayload = await importResponse.json();
+  const firstHandsResponse = await dispatch({
+    url: `/api/hands?sessionId=${encodeURIComponent(firstSession.id)}`
+  });
+  const firstHandsPayload = await firstHandsResponse.json();
+  const firstDetailResponse = await dispatch({
+    url: `/api/bankroll/sessions/${encodeURIComponent(firstSession.id)}`
+  });
+  const firstDetailPayload = await firstDetailResponse.json();
+
+  assert.equal(importResponse.status, 201);
+  assert.equal(importPayload.import.sessionId, firstSession.id);
+  assert.equal(firstHandsPayload.hands.length, 5);
+  assert.ok(firstHandsPayload.hands.every((hand) => hand.sessionId === firstSession.id));
+  assert.equal(firstDetailResponse.status, 200);
+  assert.equal(firstDetailPayload.totals.importCount, 1);
+  assert.equal(firstDetailPayload.totals.handCount, 5);
+  assert.ok(firstDetailPayload.players.length > 0);
+
+  const relinkResponse = await dispatch({
+    method: "PATCH",
+    url: `/api/imports/${encodeURIComponent(importPayload.import.id)}`,
+    body: {
+      sessionId: secondSession.id
+    }
+  });
+  const relinkPayload = await relinkResponse.json();
+  const movedHandsResponse = await dispatch({
+    url: `/api/hands?sessionId=${encodeURIComponent(secondSession.id)}`
+  });
+  const movedHandsPayload = await movedHandsResponse.json();
+  const emptiedHandsResponse = await dispatch({
+    url: `/api/hands?sessionId=${encodeURIComponent(firstSession.id)}`
+  });
+  const emptiedHandsPayload = await emptiedHandsResponse.json();
+
+  assert.equal(relinkResponse.status, 200);
+  assert.equal(relinkPayload.updatedHands, 5);
+  assert.equal(relinkPayload.import.sessionId, secondSession.id);
+  assert.equal(movedHandsPayload.hands.length, 5);
+  assert.equal(emptiedHandsPayload.hands.length, 0);
+
+  const editResponse = await dispatch({
+    method: "PATCH",
+    url: `/api/bankroll/sessions/${encodeURIComponent(secondSession.id)}`,
+    body: {
+      location: "Resorts World",
+      notes: "Moved linked import here."
+    }
+  });
+  const editPayload = await editResponse.json();
+  const secondDetailResponse = await dispatch({
+    url: `/api/bankroll/sessions/${encodeURIComponent(secondSession.id)}`
+  });
+  const secondDetailPayload = await secondDetailResponse.json();
+
+  assert.equal(editResponse.status, 200);
+  assert.equal(editPayload.session.location, "Resorts World");
+  assert.equal(secondDetailPayload.totals.handCount, 5);
+  assert.equal(secondDetailPayload.imports[0].sessionId, secondSession.id);
+
+  const deleteResponse = await dispatch({
+    method: "DELETE",
+    url: `/api/bankroll/sessions/${encodeURIComponent(secondSession.id)}`
+  });
+  const importsAfterDeleteResponse = await dispatch({ url: "/api/imports" });
+  const importsAfterDeletePayload = await importsAfterDeleteResponse.json();
+  const handsAfterDeleteResponse = await dispatch({
+    url: `/api/hands?sessionId=${encodeURIComponent(secondSession.id)}`
+  });
+  const handsAfterDeletePayload = await handsAfterDeleteResponse.json();
+
+  assert.equal(deleteResponse.status, 200);
+  assert.equal(importsAfterDeletePayload.imports[0].sessionId, null);
+  assert.equal(handsAfterDeletePayload.hands.length, 0);
+});
+
 test("clearing imported hands preserves bankroll records", async () => {
   await dispatch({
     method: "POST",

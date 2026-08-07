@@ -4,7 +4,7 @@ export function jsonResponse(statusCode, body, headers = {}) {
     headers: {
       "access-control-allow-origin": process.env.ALLOWED_ORIGIN ?? "*",
       "access-control-allow-headers": "content-type,authorization",
-      "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
+      "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
       "content-type": "application/json",
       ...headers
     },

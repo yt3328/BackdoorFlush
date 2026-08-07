@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { handKey, hashText } from "../core/importIdentity.js";
+import { buildSessionDetail } from "../core/sessionInsights.js";
 import { buildBankrollSession, summarizeBankrollSessions } from "../core/sessionTracker.js";
 
 function requiredEnv(name) {
@@ -29,6 +30,7 @@ function publicImport(item) {
     importId: item.importId,
     name: item.name,
     source: item.source,
+    sessionId: item.sessionId ?? null,
     status: item.status,
     handCount: item.handCount ?? 0,
     parsedHandCount: item.parsedHandCount ?? 0,
@@ -123,12 +125,17 @@ export class CloudHandStore {
     return sortByImportedAt((result.Items ?? []).map(publicImport));
   }
 
-  async createQueuedImport({ name, source, rawText }) {
+  async createQueuedImport({ name, source, rawText, sessionId }) {
     const { dynamo, s3, sqs, sdk } = this.clients;
     const rawHash = hashText(rawText);
     const existingImport = await this.findImportByRawHash(rawHash);
 
     if (existingImport) {
+      if (sessionId && existingImport.sessionId !== sessionId) {
+        await this.updateImportSession(existingImport.importId, sessionId);
+        existingImport.sessionId = sessionId;
+      }
+
       return {
         import: existingImport,
         hands: await this.listHands({ importId: existingImport.importId }),
@@ -145,6 +152,7 @@ export class CloudHandStore {
       importId,
       name: name || "Uploaded session",
       source: source || "file-upload",
+      sessionId: sessionId || null,
       status: "queued",
       handCount: 0,
       parsedHandCount: 0,
@@ -175,7 +183,8 @@ export class CloudHandStore {
         MessageBody: JSON.stringify({
           userId: this.userId,
           importId,
-          rawKey
+          rawKey,
+          sessionId: sessionId || null
         })
       }));
     }
@@ -203,8 +212,10 @@ export class CloudHandStore {
     return new Set(hands.map((hand) => hand.handKey ?? handKey(hand)));
   }
 
-  async saveParsedImport({ importId, rawText, hands }) {
+  async saveParsedImport({ importId, rawText, hands, sessionId }) {
     const { dynamo, sdk } = this.clients;
+    const existingImport = await this.getImport(importId);
+    const linkedSessionId = existingImport ? existingImport.sessionId ?? null : sessionId || null;
     const existingKeys = await this.existingHandKeys();
     const importedAt = new Date().toISOString();
     const parsedHands = hands.map((hand) => ({
@@ -218,6 +229,7 @@ export class CloudHandStore {
       handId: createId("hand"),
       id: undefined,
       importId,
+      sessionId: linkedSessionId,
       importedAt
     }));
 
@@ -282,7 +294,7 @@ export class CloudHandStore {
     }));
   }
 
-  async listHands({ limit = 100, player, position, importId } = {}) {
+  async listHands({ limit = 100, player, position, importId, sessionId } = {}) {
     const { dynamo, sdk } = this.clients;
     const result = await dynamo.send(new sdk.QueryCommand({
       TableName: this.handsTable,
@@ -297,6 +309,10 @@ export class CloudHandStore {
 
     if (importId) {
       hands = hands.filter((hand) => hand.importId === importId);
+    }
+
+    if (sessionId) {
+      hands = hands.filter((hand) => hand.sessionId === sessionId);
     }
 
     if (player) {
@@ -324,6 +340,51 @@ export class CloudHandStore {
     }));
 
     return result.Item ? publicHand(result.Item) : null;
+  }
+
+  async updateImportSession(importId, sessionId) {
+    const { dynamo, sdk } = this.clients;
+    const existingImport = await this.getImport(importId);
+
+    if (!existingImport) {
+      throw new Error("Import not found.");
+    }
+
+    const nextSessionId = sessionId || null;
+    await dynamo.send(new sdk.UpdateCommand({
+      TableName: this.importsTable,
+      Key: {
+        userId: this.userId,
+        importId
+      },
+      UpdateExpression: "SET sessionId = :sessionId",
+      ExpressionAttributeValues: {
+        ":sessionId": nextSessionId
+      }
+    }));
+
+    const hands = await this.listHands({ importId, limit: 1000 });
+    for (const hand of hands) {
+      await dynamo.send(new sdk.UpdateCommand({
+        TableName: this.handsTable,
+        Key: {
+          userId: this.userId,
+          handId: hand.handId ?? hand.id
+        },
+        UpdateExpression: "SET sessionId = :sessionId",
+        ExpressionAttributeValues: {
+          ":sessionId": nextSessionId
+        }
+      }));
+    }
+
+    return {
+      import: {
+        ...existingImport,
+        sessionId: nextSessionId
+      },
+      updatedHands: hands.length
+    };
   }
 
   async listBankrollSessions() {
@@ -377,6 +438,38 @@ export class CloudHandStore {
     return result.Item ? publicBankrollSession(result.Item) : null;
   }
 
+  async updateBankrollSession(sessionId, payload) {
+    const { dynamo, sdk } = this.clients;
+    const existingSession = await this.getBankrollSession(sessionId);
+
+    if (!existingSession) {
+      throw new Error("Bankroll session not found.");
+    }
+
+    const updatedSession = buildBankrollSession({
+      ...existingSession,
+      ...payload,
+      sessionId
+    }, {
+      id: sessionId,
+      createdAt: existingSession.createdAt,
+      updatedAt: new Date().toISOString()
+    });
+    const storedSession = {
+      ...updatedSession,
+      id: undefined,
+      userId: this.userId,
+      sessionId
+    };
+
+    await dynamo.send(new sdk.PutCommand({
+      TableName: this.sessionsTable,
+      Item: storedSession
+    }));
+
+    return publicBankrollSession(storedSession);
+  }
+
   async deleteBankrollSession(sessionId) {
     const { dynamo, sdk } = this.clients;
     const existingSession = await this.getBankrollSession(sessionId);
@@ -393,6 +486,11 @@ export class CloudHandStore {
       }
     }));
 
+    const imports = await this.listImports();
+    for (const record of imports.filter((item) => item.sessionId === sessionId)) {
+      await this.updateImportSession(record.importId, null);
+    }
+
     return {
       session: existingSession
     };
@@ -400,6 +498,16 @@ export class CloudHandStore {
 
   async bankrollSummary() {
     return summarizeBankrollSessions(await this.listBankrollSessions());
+  }
+
+  async bankrollSessionDetail(sessionId) {
+    const session = await this.getBankrollSession(sessionId);
+
+    return buildSessionDetail({
+      session,
+      imports: (await this.listImports()).filter((record) => record.sessionId === sessionId),
+      hands: await this.listHands({ sessionId, limit: 1000 })
+    });
   }
 
   async deleteImport(importId) {

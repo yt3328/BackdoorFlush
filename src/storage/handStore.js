@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { mkdirSync } from "node:fs";
 import { handKey, hashText } from "../core/importIdentity.js";
+import { buildSessionDetail } from "../core/sessionInsights.js";
 import { buildBankrollSession, summarizeBankrollSessions } from "../core/sessionTracker.js";
 
 function emptyState() {
@@ -47,13 +48,17 @@ export class HandStore {
     writeFileSync(this.persistencePath, JSON.stringify(this.state, null, 2));
   }
 
-  addImport({ name, source, rawText, hands }) {
+  addImport({ name, source, rawText, hands, sessionId }) {
     const rawHash = hashText(rawText);
     const existingImport = this.state.imports.find((record) => record.rawHash === rawHash);
 
     if (existingImport) {
+      if (sessionId && existingImport.sessionId !== sessionId) {
+        this.updateImportSession(existingImport.id, sessionId);
+      }
+
       return {
-        import: existingImport,
+        import: this.state.imports.find((record) => record.id === existingImport.id),
         hands: this.state.hands.filter((hand) => hand.importId === existingImport.id),
         duplicate: true,
         skippedCount: hands.length
@@ -88,6 +93,7 @@ export class HandStore {
       id: createId("imp"),
       name: name || `Import ${this.state.imports.length + 1}`,
       source: source || "manual-upload",
+      sessionId: sessionId || null,
       handCount: newHands.length,
       parsedHandCount: hands.length,
       skippedCount: hands.length - newHands.length,
@@ -100,6 +106,7 @@ export class HandStore {
       ...hand,
       id: createId("hand"),
       importId: importRecord.id,
+      sessionId: importRecord.sessionId,
       importedAt
     }));
 
@@ -117,8 +124,16 @@ export class HandStore {
     return [...this.state.imports];
   }
 
-  listHands({ limit = 100, player, position } = {}) {
+  listHands({ limit = 100, player, position, importId, sessionId } = {}) {
     let hands = [...this.state.hands];
+
+    if (importId) {
+      hands = hands.filter((hand) => hand.importId === importId);
+    }
+
+    if (sessionId) {
+      hands = hands.filter((hand) => hand.sessionId === sessionId);
+    }
 
     if (player) {
       hands = hands.filter((hand) => hand.players.some((seat) => seat.name === player));
@@ -138,8 +153,36 @@ export class HandStore {
     return this.state.hands.find((hand) => hand.id === id) ?? null;
   }
 
+  updateImportSession(importId, sessionId) {
+    const existingImport = this.state.imports.find((record) => record.id === importId || record.importId === importId);
+
+    if (!existingImport) {
+      throw new Error("Import not found.");
+    }
+
+    const nextSessionId = sessionId || null;
+    existingImport.sessionId = nextSessionId;
+    for (const hand of this.state.hands) {
+      if (hand.importId === existingImport.id || hand.importId === existingImport.importId) {
+        hand.sessionId = nextSessionId;
+      }
+    }
+    this.save();
+
+    return {
+      import: existingImport,
+      updatedHands: this.state.hands.filter((hand) => (
+        hand.importId === existingImport.id || hand.importId === existingImport.importId
+      )).length
+    };
+  }
+
   listBankrollSessions() {
     return [...this.state.bankrollSessions].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  }
+
+  getBankrollSession(id) {
+    return this.state.bankrollSessions.find((session) => session.id === id || session.sessionId === id) ?? null;
   }
 
   createBankrollSession(payload) {
@@ -154,16 +197,56 @@ export class HandStore {
     return session;
   }
 
-  deleteBankrollSession(id) {
-    const existingSession = this.state.bankrollSessions.find((session) => session.id === id || session.sessionId === id);
+  updateBankrollSession(id, payload) {
+    const existingSession = this.getBankrollSession(id);
 
     if (!existingSession) {
       throw new Error("Bankroll session not found.");
     }
 
+    const updatedSession = buildBankrollSession({
+      ...existingSession,
+      ...payload,
+      id: existingSession.id,
+      sessionId: existingSession.sessionId
+    }, {
+      id: existingSession.sessionId ?? existingSession.id,
+      createdAt: existingSession.createdAt,
+      updatedAt: new Date().toISOString()
+    });
+
+    this.state.bankrollSessions = this.state.bankrollSessions.map((session) =>
+      session.id === existingSession.id || session.sessionId === existingSession.sessionId
+        ? updatedSession
+        : session
+    );
+    this.save();
+
+    return updatedSession;
+  }
+
+  deleteBankrollSession(id) {
+    const existingSession = this.getBankrollSession(id);
+
+    if (!existingSession) {
+      throw new Error("Bankroll session not found.");
+    }
+
+    const existingSessionId = existingSession.sessionId ?? existingSession.id;
+
     this.state.bankrollSessions = this.state.bankrollSessions.filter(
       (session) => session.id !== id && session.sessionId !== id
     );
+    for (const record of this.state.imports) {
+      if (record.sessionId === existingSessionId) {
+        record.sessionId = null;
+      }
+    }
+    for (const hand of this.state.hands) {
+      if (hand.sessionId === existingSessionId) {
+        hand.sessionId = null;
+      }
+    }
     this.save();
 
     return {
@@ -173,6 +256,17 @@ export class HandStore {
 
   bankrollSummary() {
     return summarizeBankrollSessions(this.state.bankrollSessions);
+  }
+
+  bankrollSessionDetail(id) {
+    const session = this.getBankrollSession(id);
+    const sessionId = session?.sessionId ?? session?.id;
+
+    return buildSessionDetail({
+      session,
+      imports: this.state.imports.filter((record) => record.sessionId === sessionId),
+      hands: this.listHands({ sessionId, limit: 1000 })
+    });
   }
 
   deleteImport(id) {
