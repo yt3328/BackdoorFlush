@@ -4,7 +4,7 @@ Backdoor Flush is a small hand-history desk for reviewing poker sessions.
 
 The local app lets you upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, track bankroll sessions, and run quick equity checks.
 
-Version 0.9 adds study filters, tag performance summaries, review queue controls, and similar-hand recommendations.
+Version 1.0 adds a decision review engine with street-by-street hero decisions, pot context, flags, per-decision notes, review checklists, and study-plan prompts.
 
 ## Run it
 
@@ -40,6 +40,9 @@ Local mode:
 - Filters the hand library by tag, review status, session, hero position, result type, and pot/result sort.
 - Summarizes tag performance across saved review spots.
 - Finds similar hands from the selected hand's tags, hero position, streets, action pattern, pot size, and result.
+- Breaks hands into hero decisions with pot size, bet size, pot odds, SPR, active players, and automatic flags.
+- Saves notes and checklist answers on individual decisions.
+- Builds a study plan from open river decisions, flagged decisions, tagged hands, and biggest losses.
 - Replays parsed actions on a visual table with step controls.
 - Flags a few basic review signals from the current sample.
 - Runs a Monte Carlo equity check for 2-card Hold'em hands.
@@ -56,7 +59,8 @@ AWS mode:
 - Saves live-entered hands directly as ready imports.
 - Writes imports and parsed hands to DynamoDB.
 - Stores review tags, notes, and reviewed status on hand records.
-- Serves study endpoints for tag performance, hand-library filters, and similar spots.
+- Stores decision notes and checklist answers on hand records.
+- Serves study endpoints for tag performance, hand-library filters, similar spots, decision breakdowns, and study plans.
 - Writes bankroll sessions to a separate DynamoDB table.
 - Exposes the same core stats/equity behavior through Lambda handlers.
 - Hosts the static dashboard from a private S3 bucket through CloudFront.
@@ -72,6 +76,7 @@ curl http://localhost:3400/api/leaks
 curl http://localhost:3400/api/review/spots
 curl http://localhost:3400/api/study/tags
 curl http://localhost:3400/api/study/library
+curl http://localhost:3400/api/study/plan
 curl http://localhost:3400/api/bankroll/summary
 curl http://localhost:3400/api/bankroll/sessions
 curl -X POST http://localhost:3400/api/live-hands
@@ -95,6 +100,7 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 
 - `src/core/handParser.js` parses hand-history text.
 - `src/core/liveHandBuilder.js` normalizes manually entered live hands.
+- `src/core/decisionReview.js` builds decision breakdowns, checklists, and study-plan prompts.
 - `src/core/handReview.js` normalizes review metadata and ranks hands for review.
 - `src/core/studyTools.js` summarizes tags, filters the study library, and finds similar spots.
 - `src/core/stats.js` computes player summaries and review signals.
@@ -114,5 +120,5 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 
 - Support more hand-history formats and larger real-world exports.
 - Add richer filters inside the session detail view.
-- Add saved study plans built from recurring tags and losses.
-- Replace the first-pass similarity scoring with a larger recommendation engine.
+- Add decision review exports for selected sessions.
+- Replace the first-pass decision flags with a larger recommendation engine.

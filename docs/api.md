@@ -67,6 +67,8 @@ Repeated calls do not duplicate the sample hands.
 GET /api/hands?limit=100&player=Tao&position=BTN&sessionId=sess_...
 GET /api/hands/:id
 PATCH /api/hands/:id
+GET /api/hands/:id/decisions
+PATCH /api/hands/:id/decisions/:decisionId
 ```
 
 All query params are optional. `importId` can also be used to read hands from one upload.
@@ -82,6 +84,32 @@ Update review metadata on a hand:
 ```
 
 Send `reviewed: false` to reopen a hand.
+
+Read a hand's decision breakdown:
+
+```http
+GET /api/hands/hand_.../decisions
+```
+
+This returns hero decisions with street, action, pot before/after, bet-size percentage, pot odds, SPR, active players, automatic flags, prompts, saved note, checklist answers, and reviewed status.
+
+Update one decision review:
+
+```json
+{
+  "note": "River call needs a clearer bluff-catching reason.",
+  "checklist": {
+    "villainRange": "Mostly value, some missed draws.",
+    "handsBeat": "Missed draws only.",
+    "worseHandsCall": "Not relevant.",
+    "betterHandsFold": "",
+    "nextAdjustment": "Fold this river without better blockers."
+  },
+  "reviewed": true
+}
+```
+
+Send `reviewed: false` to reopen the decision.
 
 ## Live Hands
 
@@ -153,6 +181,7 @@ GET /api/review/spots?sessionId=sess_...&tag=river-decision&reviewed=false&sort=
 ```http
 GET /api/study/tags
 GET /api/study/library?tag=river-decision&reviewed=false&position=BTN&result=loss&sort=biggest-loss
+GET /api/study/plan
 GET /api/hands/:id/similar?limit=6
 ```
 
@@ -161,6 +190,8 @@ GET /api/hands/:id/similar?limit=6
 `/api/study/library` returns compact hand rows for a filtered study library. Supported filters are `limit`, `sessionId`, `tag`, `reviewed`, `position`, `result`, `player`, `search`, and `sort`.
 
 `/api/hands/:id/similar` returns hands ranked by shared tags, hero position, decision streets, preflop shape, pot size, and result type.
+
+`/api/study/plan` returns study prompts built from open river decisions, flagged decisions, tagged hands, and biggest losses.
 
 ## Session
 

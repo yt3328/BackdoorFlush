@@ -47,6 +47,7 @@ flowchart LR
 - Live hands are normalized into the same hand shape as parsed imports, then saved as ready `live-entry` imports.
 - Review tags, notes, and reviewed status live on each hand record.
 - Study views derive tag performance, filtered library rows, and similar spots from those hand records.
+- Decision reviews derive street-level hero decisions from hand actions and store notes/checklists back on the hand record.
 - CloudWatch alarms track API and parse worker errors.
 - SageMaker can be added later for recommendation or clustering work.
 
@@ -70,6 +71,7 @@ Parsed hands should eventually include:
 - `tags`
 - `notes`
 - `reviewedAt`
+- `decisionReviews`
 - `createdAt`
 
 Bankroll sessions include:
@@ -102,6 +104,6 @@ Imports include:
 - `rawKey`
 - `importedAt`
 
-## Version 0.9 Boundaries
+## Version 1.0 Boundaries
 
-The cloud backend and frontend host are deployed with SAM. The dashboard files are still plain static assets, so publishing the frontend is a separate `aws s3 sync` step after the stack is updated and `public/config.js` contains the API and Cognito outputs. v0.9 supports hand-library filters, tag performance summaries, review queue controls, and similar-hand recommendations. The similarity scoring is still rule-based; a later version can learn from reviewed hands, tags, and user corrections.
+The cloud backend and frontend host are deployed with SAM. The dashboard files are still plain static assets, so publishing the frontend is a separate `aws s3 sync` step after the stack is updated and `public/config.js` contains the API and Cognito outputs. v1.0 supports hand-library filters, tag performance summaries, review queue controls, similar-hand recommendations, decision breakdowns, per-decision notes/checklists, and study-plan prompts. Decision flags are rule-based; a later version can learn from reviewed decisions and user corrections.

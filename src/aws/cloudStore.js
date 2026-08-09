@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { buildDecisionBreakdown, buildStudyPlan, normalizeDecisionReviewPatch } from "../core/decisionReview.js";
 import { buildReviewQueue, normalizeReviewPatch } from "../core/handReview.js";
 import { handKey, hashText } from "../core/importIdentity.js";
 import { buildLiveHand } from "../core/liveHandBuilder.js";
@@ -54,6 +55,7 @@ function publicHand(item) {
     tags: Array.isArray(item.tags) ? item.tags : [],
     notes: item.notes ?? "",
     reviewedAt: item.reviewedAt ?? null,
+    decisionReviews: item.decisionReviews && typeof item.decisionReviews === "object" ? item.decisionReviews : {},
     id: item.handId
   };
 }
@@ -320,6 +322,7 @@ export class CloudHandStore {
       tags: Array.isArray(hand.tags) ? hand.tags : [],
       notes: hand.notes ?? "",
       reviewedAt: hand.reviewedAt ?? null,
+      decisionReviews: hand.decisionReviews && typeof hand.decisionReviews === "object" ? hand.decisionReviews : {},
       importedAt
     }));
 
@@ -460,6 +463,68 @@ export class CloudHandStore {
       ...existingHand,
       ...review
     };
+  }
+
+  async decisionReview(handId) {
+    const existingHand = await this.getHand(handId);
+
+    if (!existingHand) {
+      throw new Error("Hand not found.");
+    }
+
+    return buildDecisionBreakdown(existingHand);
+  }
+
+  async updateDecisionReview(handId, decisionId, payload) {
+    const { dynamo, sdk } = this.clients;
+    const existingHand = await this.getHand(handId);
+
+    if (!existingHand) {
+      throw new Error("Hand not found.");
+    }
+
+    const report = buildDecisionBreakdown(existingHand);
+    if (!report.decisions.some((decision) => decision.id === decisionId)) {
+      throw new Error("Decision not found.");
+    }
+
+    const existingReviews = existingHand.decisionReviews && typeof existingHand.decisionReviews === "object"
+      ? existingHand.decisionReviews
+      : {};
+    const decisionReviews = {
+      ...existingReviews,
+      [decisionId]: normalizeDecisionReviewPatch(payload, existingReviews[decisionId] ?? {})
+    };
+    const decisionReviewUpdatedAt = new Date().toISOString();
+
+    await dynamo.send(new sdk.UpdateCommand({
+      TableName: this.handsTable,
+      Key: {
+        userId: this.userId,
+        handId
+      },
+      UpdateExpression: "SET decisionReviews = :decisionReviews, decisionReviewUpdatedAt = :decisionReviewUpdatedAt",
+      ExpressionAttributeValues: {
+        ":decisionReviews": decisionReviews,
+        ":decisionReviewUpdatedAt": decisionReviewUpdatedAt
+      }
+    }));
+
+    const hand = {
+      ...existingHand,
+      decisionReviews,
+      decisionReviewUpdatedAt
+    };
+
+    return {
+      hand,
+      review: decisionReviews[decisionId],
+      report: buildDecisionBreakdown(hand)
+    };
+  }
+
+  async studyPlan() {
+    return buildStudyPlan(await this.listHands({ limit: 1000 }));
   }
 
   async reviewQueue(filters = {}) {

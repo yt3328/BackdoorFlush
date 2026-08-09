@@ -31,6 +31,14 @@ function handIdFromPath(pathname) {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+function handDecisionPath(pathname) {
+  const match = pathname.match(/^\/api\/hands\/([^/]+)\/decisions(?:\/([^/]+))?$/);
+  return match ? {
+    handId: decodeURIComponent(match[1]),
+    decisionId: match[2] ? decodeURIComponent(match[2]) : null
+  } : null;
+}
+
 function similarHandIdFromPath(pathname) {
   const match = pathname.match(/^\/api\/hands\/([^/]+)\/similar$/);
   return match ? decodeURIComponent(match[1]) : null;
@@ -180,6 +188,19 @@ export async function api(event) {
       });
     }
 
+    const decisionPath = handDecisionPath(pathname);
+    if (decisionPath && method === "GET" && !decisionPath.decisionId) {
+      return jsonResponse(200, await store.decisionReview(decisionPath.handId));
+    }
+
+    if (decisionPath && method === "PATCH" && decisionPath.decisionId) {
+      return jsonResponse(200, await store.updateDecisionReview(
+        decisionPath.handId,
+        decisionPath.decisionId,
+        eventBody(event)
+      ));
+    }
+
     if (pathname === "/api/stats/summary" && method === "GET") {
       return jsonResponse(200, {
         players: summarizeHands(
@@ -231,6 +252,12 @@ export async function api(event) {
           search: queryValue(event, "search"),
           sort: queryValue(event, "sort")
         })
+      });
+    }
+
+    if (pathname === "/api/study/plan" && method === "GET") {
+      return jsonResponse(200, {
+        items: await store.studyPlan()
       });
     }
 

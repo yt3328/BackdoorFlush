@@ -33,6 +33,14 @@ function handIdFromPath(pathname) {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+function handDecisionPath(pathname) {
+  const match = pathname.match(/^\/api\/hands\/([^/]+)\/decisions(?:\/([^/]+))?$/);
+  return match ? {
+    handId: decodeURIComponent(match[1]),
+    decisionId: match[2] ? decodeURIComponent(match[2]) : null
+  } : null;
+}
+
 function similarHandIdFromPath(pathname) {
   const match = pathname.match(/^\/api\/hands\/([^/]+)\/similar$/);
   return match ? decodeURIComponent(match[1]) : null;
@@ -181,6 +189,22 @@ export function createHttpServer({ store }) {
         return;
       }
 
+      const decisionPath = handDecisionPath(requestUrl.pathname);
+      if (decisionPath && request.method === "GET" && !decisionPath.decisionId) {
+        sendJson(response, 200, store.decisionReview(decisionPath.handId));
+        return;
+      }
+
+      if (decisionPath && request.method === "PATCH" && decisionPath.decisionId) {
+        const payload = await readJsonBody(request);
+        sendJson(response, 200, store.updateDecisionReview(
+          decisionPath.handId,
+          decisionPath.decisionId,
+          payload
+        ));
+        return;
+      }
+
       if (requestUrl.pathname === "/api/stats/summary") {
         if (!methodAllowed(request, response, "GET")) {
           return;
@@ -256,6 +280,17 @@ export function createHttpServer({ store }) {
             search: requestUrl.searchParams.get("search"),
             sort: requestUrl.searchParams.get("sort")
           })
+        });
+        return;
+      }
+
+      if (requestUrl.pathname === "/api/study/plan") {
+        if (!methodAllowed(request, response, "GET")) {
+          return;
+        }
+
+        sendJson(response, 200, {
+          items: store.studyPlan()
         });
         return;
       }

@@ -626,6 +626,47 @@ test("study endpoints return tag summaries, filtered library hands, and similar 
   assert.ok(similarPayload.hands[0].similarityReasons.some((reason) => reason.includes("Shared tag")));
 });
 
+test("decision review endpoints save checklist answers and feed the study plan", async () => {
+  const hand = await createTaggedLiveHand({
+    handNumber: "decision-api-target",
+    tags: ["river-decision", "bad-call"],
+    reviewed: false,
+    winner: "Villain",
+    riverAmount: 110
+  });
+  const decisionsResponse = await dispatch({
+    url: `/api/hands/${encodeURIComponent(hand.id)}/decisions`
+  });
+  const decisionsPayload = await decisionsResponse.json();
+  const riverDecision = decisionsPayload.decisions.find((decision) => decision.street === "river");
+  const patchResponse = await dispatch({
+    method: "PATCH",
+    url: `/api/hands/${encodeURIComponent(hand.id)}/decisions/${encodeURIComponent(riverDecision.id)}`,
+    body: {
+      note: "Call needs a better bluff-catching reason.",
+      checklist: {
+        villainRange: "Polar but value heavy.",
+        handsBeat: "Only missed draws.",
+        worseHandsCall: "Not relevant."
+      },
+      reviewed: true
+    }
+  });
+  const patchPayload = await patchResponse.json();
+  const planResponse = await dispatch({ url: "/api/study/plan" });
+  const planPayload = await planResponse.json();
+  const savedDecision = patchPayload.report.decisions.find((decision) => decision.id === riverDecision.id);
+
+  assert.equal(decisionsResponse.status, 200);
+  assert.ok(riverDecision.flags.includes("River call"));
+  assert.equal(patchResponse.status, 200);
+  assert.equal(savedDecision.note, "Call needs a better bluff-catching reason.");
+  assert.equal(savedDecision.checklist.villainRange, "Polar but value heavy.");
+  assert.ok(savedDecision.reviewedAt);
+  assert.equal(planResponse.status, 200);
+  assert.ok(planPayload.items.some((item) => item.id === "tagged-open-hands"));
+});
+
 test("clearing imported hands preserves bankroll records", async () => {
   await dispatch({
     method: "POST",

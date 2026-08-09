@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { mkdirSync } from "node:fs";
+import { buildDecisionBreakdown, buildStudyPlan, normalizeDecisionReviewPatch } from "../core/decisionReview.js";
 import { buildReviewQueue, normalizeReviewPatch } from "../core/handReview.js";
 import { handKey, hashText } from "../core/importIdentity.js";
 import { buildLiveHand } from "../core/liveHandBuilder.js";
@@ -39,6 +40,7 @@ export class HandStore {
         tags: Array.isArray(hand.tags) ? hand.tags : [],
         notes: hand.notes ?? "",
         reviewedAt: hand.reviewedAt ?? null,
+        decisionReviews: hand.decisionReviews && typeof hand.decisionReviews === "object" ? hand.decisionReviews : {},
         handKey: hand.handKey ?? handKey(hand)
       })) : [],
       bankrollSessions: Array.isArray(state.bankrollSessions) ? state.bankrollSessions : []
@@ -116,6 +118,7 @@ export class HandStore {
       tags: Array.isArray(hand.tags) ? hand.tags : [],
       notes: hand.notes ?? "",
       reviewedAt: hand.reviewedAt ?? null,
+      decisionReviews: hand.decisionReviews && typeof hand.decisionReviews === "object" ? hand.decisionReviews : {},
       importedAt
     }));
 
@@ -194,6 +197,49 @@ export class HandStore {
     this.save();
 
     return existingHand;
+  }
+
+  decisionReview(id) {
+    const existingHand = this.getHand(id);
+
+    if (!existingHand) {
+      throw new Error("Hand not found.");
+    }
+
+    return buildDecisionBreakdown(existingHand);
+  }
+
+  updateDecisionReview(id, decisionId, payload) {
+    const existingHand = this.getHand(id);
+
+    if (!existingHand) {
+      throw new Error("Hand not found.");
+    }
+
+    const report = buildDecisionBreakdown(existingHand);
+    if (!report.decisions.some((decision) => decision.id === decisionId)) {
+      throw new Error("Decision not found.");
+    }
+
+    const existingReviews = existingHand.decisionReviews && typeof existingHand.decisionReviews === "object"
+      ? existingHand.decisionReviews
+      : {};
+    existingHand.decisionReviews = {
+      ...existingReviews,
+      [decisionId]: normalizeDecisionReviewPatch(payload, existingReviews[decisionId] ?? {})
+    };
+    existingHand.decisionReviewUpdatedAt = new Date().toISOString();
+    this.save();
+
+    return {
+      hand: existingHand,
+      review: existingHand.decisionReviews[decisionId],
+      report: buildDecisionBreakdown(existingHand)
+    };
+  }
+
+  studyPlan() {
+    return buildStudyPlan(this.listHands({ limit: 1000 }));
   }
 
   reviewQueue(filters = {}) {

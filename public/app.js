@@ -53,8 +53,12 @@ const state = {
   leaks: [],
   reviewSpots: [],
   studyTags: [],
+  studyPlan: [],
   similarHands: [],
   similarForHandId: null,
+  decisionReport: null,
+  decisionReportForHandId: null,
+  selectedDecisionId: null,
   selectedSessionId: null,
   selectedHandId: null,
   liveActions: [],
@@ -90,6 +94,7 @@ const elements = {
   playerStats: document.querySelector("#player-stats"),
   leakList: document.querySelector("#leak-list"),
   tagSummary: document.querySelector("#tag-summary"),
+  studyPlan: document.querySelector("#study-plan"),
   positionChart: document.querySelector("#position-chart"),
   importChart: document.querySelector("#import-chart"),
   bankrollChart: document.querySelector("#bankroll-chart"),
@@ -192,8 +197,12 @@ function clearDashboardData() {
   state.leaks = [];
   state.reviewSpots = [];
   state.studyTags = [];
+  state.studyPlan = [];
   state.similarHands = [];
   state.similarForHandId = null;
+  state.decisionReport = null;
+  state.decisionReportForHandId = null;
+  state.selectedDecisionId = null;
   state.selectedSessionId = null;
   state.selectedHandId = null;
   state.replayStep = 0;
@@ -849,6 +858,26 @@ function renderTagSummary() {
     .join("");
 }
 
+function renderStudyPlan() {
+  if (state.studyPlan.length === 0) {
+    elements.studyPlan.innerHTML = '<div class="empty compact">No study plan yet.</div>';
+    return;
+  }
+
+  elements.studyPlan.innerHTML = state.studyPlan
+    .slice(0, 4)
+    .map((item) => `
+      <button class="study-plan-row" type="button" data-study-plan-hand="${escapeHtml(item.handIds?.[0] ?? "")}" ${item.handIds?.length ? "" : "disabled"}>
+        <span>
+          <strong>${escapeHtml(item.title)}</strong>
+          <small>${escapeHtml(item.detail)}</small>
+        </span>
+        <em>${item.count}</em>
+      </button>
+    `)
+    .join("");
+}
+
 function renderSessionSummary() {
   const summary = state.bankrollSummary;
 
@@ -1300,6 +1329,116 @@ function renderSimilarHands(hand) {
   `;
 }
 
+function decisionAmountLabel(decision) {
+  return decision.amount > 0 ? ` ${formatCurrency(decision.amount)}` : "";
+}
+
+function decisionTitle(decision) {
+  return `${streetLabels[decision.street] ?? decision.street}: ${decision.actionType}${decisionAmountLabel(decision)}`;
+}
+
+function decisionReportFor(hand) {
+  return state.decisionReportForHandId === hand.id ? state.decisionReport : null;
+}
+
+function renderDecisionReview(hand) {
+  const report = decisionReportFor(hand);
+
+  if (!report) {
+    return `
+      <section class="decision-review">
+        <div class="review-editor-head">
+          <div>
+            <span class="subtle">Decision Review</span>
+            <strong>Loading decisions</strong>
+          </div>
+        </div>
+        <div class="empty compact">Building the street-by-street breakdown.</div>
+      </section>
+    `;
+  }
+
+  if (report.decisions.length === 0) {
+    return `
+      <section class="decision-review">
+        <div class="review-editor-head">
+          <div>
+            <span class="subtle">Decision Review</span>
+            <strong>No hero decisions found</strong>
+          </div>
+        </div>
+        <div class="empty compact">Hero actions appear here after a parsed or live hand has action data.</div>
+      </section>
+    `;
+  }
+
+  const selected = report.decisions.find((decision) => decision.id === state.selectedDecisionId) ?? report.decisions[0];
+  state.selectedDecisionId = selected.id;
+  const promptById = new Map((report.prompts ?? []).map((prompt) => [prompt.id, prompt]));
+
+  return `
+    <section class="decision-review">
+      <div class="review-editor-head">
+        <div>
+          <span class="subtle">Decision Review</span>
+          <strong>${report.summary.reviewedCount} / ${report.summary.decisionCount} reviewed</strong>
+        </div>
+        <span class="pill">${report.summary.flaggedCount} flags</span>
+      </div>
+      <div class="decision-strip">
+        ${report.decisions.map((decision) => `
+          <button class="decision-chip ${decision.id === selected.id ? "active" : ""}" type="button" data-select-decision="${escapeHtml(decision.id)}">
+            <span>${escapeHtml(streetLabels[decision.street] ?? decision.street)}</span>
+            <strong>${escapeHtml(decision.actionType)}${decision.amount ? ` ${formatCurrency(decision.amount)}` : ""}</strong>
+            ${decision.reviewedAt ? '<small>reviewed</small>' : '<small>open</small>'}
+          </button>
+        `).join("")}
+      </div>
+      <article class="decision-card" data-current-decision="${escapeHtml(selected.id)}">
+        <div class="decision-card-head">
+          <div>
+            <span class="subtle">${escapeHtml(decisionTitle(selected))}</span>
+            <strong>${formatCurrency(selected.potBefore)} pot before / ${selected.spr === null ? "SPR n/a" : `SPR ${selected.spr}`}</strong>
+          </div>
+          ${selected.reviewedAt ? '<span class="status ready">reviewed</span>' : '<span class="status queued">open</span>'}
+        </div>
+        <div class="decision-metrics">
+          <div>
+            <span class="subtle">Bet size</span>
+            <strong>${selected.betSizePct === null ? "--" : `${selected.betSizePct}%`}</strong>
+          </div>
+          <div>
+            <span class="subtle">Pot odds</span>
+            <strong>${selected.potOddsPct === null ? "--" : `${selected.potOddsPct}%`}</strong>
+          </div>
+          <div>
+            <span class="subtle">Players</span>
+            <strong>${selected.activePlayers}</strong>
+          </div>
+        </div>
+        ${selected.flags.length ? renderTags(selected.flags.map(normalizeTag)) : '<p class="muted-line">No automatic flags for this decision.</p>'}
+        <textarea data-decision-note rows="4" placeholder="Decision note">${escapeHtml(selected.note ?? "")}</textarea>
+        <div class="decision-checklist">
+          ${(selected.promptIds ?? []).map((promptId) => {
+            const prompt = promptById.get(promptId) ?? { id: promptId, label: promptId };
+            return `
+              <label>
+                ${escapeHtml(prompt.label)}
+                <textarea data-decision-checklist="${escapeHtml(prompt.id)}" rows="2">${escapeHtml(selected.checklist?.[prompt.id] ?? "")}</textarea>
+              </label>
+            `;
+          }).join("")}
+        </div>
+        <div class="form-actions">
+          <button class="button" type="button" data-save-decision>Save Decision</button>
+          <button class="button secondary" type="button" data-mark-decision-reviewed>Mark Reviewed</button>
+          <button class="button ghost" type="button" data-clear-decision-reviewed>Reopen</button>
+        </div>
+      </article>
+    </section>
+  `;
+}
+
 function renderHandDetail() {
   const hand = state.hands.find((item) => item.id === state.selectedHandId);
 
@@ -1379,6 +1518,7 @@ function renderHandDetail() {
         <button class="button ghost" type="button" data-clear-reviewed>Reopen</button>
       </div>
     </section>
+    ${renderDecisionReview(hand)}
     ${renderSimilarHands(hand)}
     <ul class="seat-list">${seats}</ul>
     <div class="street-list">${streets || '<div class="empty">No actions parsed for this hand.</div>'}</div>
@@ -1454,6 +1594,7 @@ function render() {
   renderBankrollCharts();
   renderReviewQueue();
   renderTagSummary();
+  renderStudyPlan();
   renderSessions();
   renderHands();
   renderHandDetail();
@@ -1475,6 +1616,7 @@ async function refresh({ quiet = false } = {}) {
     leaksPayload,
     reviewPayload,
     tagsPayload,
+    planPayload,
     bankrollSessionsPayload,
     bankrollSummaryPayload
   ] = await Promise.all([
@@ -1484,6 +1626,7 @@ async function refresh({ quiet = false } = {}) {
     api("/api/leaks"),
     api(reviewQueuePath()),
     api("/api/study/tags"),
+    api("/api/study/plan"),
     api("/api/bankroll/sessions"),
     api("/api/bankroll/summary")
   ]);
@@ -1494,6 +1637,7 @@ async function refresh({ quiet = false } = {}) {
   state.leaks = leaksPayload.leaks;
   state.reviewSpots = reviewPayload.spots;
   state.studyTags = tagsPayload.tags;
+  state.studyPlan = planPayload.items;
   state.bankrollSessions = bankrollSessionsPayload.sessions;
   state.bankrollSummary = bankrollSummaryPayload.summary;
 
@@ -1508,12 +1652,23 @@ async function refresh({ quiet = false } = {}) {
   }
 
   if (state.selectedHandId) {
-    const similarPayload = await api(`/api/hands/${encodeURIComponent(state.selectedHandId)}/similar?limit=6`);
+    const [similarPayload, decisionPayload] = await Promise.all([
+      api(`/api/hands/${encodeURIComponent(state.selectedHandId)}/similar?limit=6`),
+      api(`/api/hands/${encodeURIComponent(state.selectedHandId)}/decisions`)
+    ]);
     state.similarForHandId = state.selectedHandId;
     state.similarHands = similarPayload.hands;
+    state.decisionReportForHandId = state.selectedHandId;
+    state.decisionReport = decisionPayload;
+    if (!state.selectedDecisionId || !decisionPayload.decisions.some((decision) => decision.id === state.selectedDecisionId)) {
+      state.selectedDecisionId = decisionPayload.decisions[0]?.id ?? null;
+    }
   } else {
     state.similarForHandId = null;
     state.similarHands = [];
+    state.decisionReportForHandId = null;
+    state.decisionReport = null;
+    state.selectedDecisionId = null;
   }
 
   render();
@@ -1546,12 +1701,40 @@ async function loadSimilarHands(handId) {
   renderHandDetail();
 }
 
+async function loadDecisionReview(handId) {
+  state.decisionReportForHandId = null;
+  state.decisionReport = null;
+  renderHandDetail();
+
+  const payload = await api(`/api/hands/${encodeURIComponent(handId)}/decisions`);
+  if (state.selectedHandId !== handId) {
+    return;
+  }
+
+  state.decisionReportForHandId = handId;
+  state.decisionReport = payload;
+  if (!state.selectedDecisionId || !payload.decisions.some((decision) => decision.id === state.selectedDecisionId)) {
+    state.selectedDecisionId = payload.decisions[0]?.id ?? null;
+  }
+  renderHandDetail();
+}
+
+async function loadStudyPlan() {
+  const payload = await api("/api/study/plan");
+  state.studyPlan = payload.items;
+  renderStudyPlan();
+}
+
 async function selectHand(handId) {
   state.selectedHandId = handId;
   state.replayStep = 0;
+  state.selectedDecisionId = null;
   renderHands();
   renderHandDetail();
-  await loadSimilarHands(handId);
+  await Promise.all([
+    loadSimilarHands(handId),
+    loadDecisionReview(handId)
+  ]);
 }
 
 function readSelectedFile(file) {
@@ -1694,6 +1877,53 @@ elements.handDetail.addEventListener("click", async (event) => {
     return;
   }
 
+  const decisionTarget = event.target.closest("[data-select-decision]");
+  if (decisionTarget) {
+    state.selectedDecisionId = decisionTarget.dataset.selectDecision;
+    renderHandDetail();
+    return;
+  }
+
+  const decisionReviewTarget = event.target.closest("[data-save-decision], [data-mark-decision-reviewed], [data-clear-decision-reviewed]");
+  if (decisionReviewTarget) {
+    const hand = state.hands.find((item) => item.id === state.selectedHandId);
+    const decisionId = elements.handDetail.querySelector("[data-current-decision]")?.dataset.currentDecision;
+    if (!hand || !decisionId) {
+      return;
+    }
+
+    const checklist = {};
+    for (const input of elements.handDetail.querySelectorAll("[data-decision-checklist]")) {
+      checklist[input.dataset.decisionChecklist] = input.value;
+    }
+    const reviewed = decisionReviewTarget.matches("[data-mark-decision-reviewed]")
+      ? true
+      : decisionReviewTarget.matches("[data-clear-decision-reviewed]")
+        ? false
+        : undefined;
+
+    try {
+      const payload = await api(`/api/hands/${encodeURIComponent(hand.id)}/decisions/${encodeURIComponent(decisionId)}`, {
+        method: "PATCH",
+        body: {
+          note: elements.handDetail.querySelector("[data-decision-note]")?.value ?? "",
+          checklist,
+          ...(reviewed === undefined ? {} : { reviewed })
+        }
+      });
+      state.hands = state.hands.map((item) => item.id === payload.hand.id ? payload.hand : item);
+      state.decisionReportForHandId = hand.id;
+      state.decisionReport = payload.report;
+      state.selectedDecisionId = decisionId;
+      await loadStudyPlan();
+      renderHandDetail();
+      showToast(reviewed === true ? "Decision marked reviewed." : "Decision review saved.");
+    } catch (error) {
+      showToast(error.message);
+    }
+    return;
+  }
+
   const tagTarget = event.target.closest("[data-review-tag]");
   if (tagTarget) {
     tagTarget.classList.toggle("active");
@@ -1798,6 +2028,16 @@ elements.tagSummary.addEventListener("click", (event) => {
   setView("hands");
   elements.handTagFilter.value = target.dataset.filterTag;
   renderHands();
+});
+
+elements.studyPlan.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-study-plan-hand]");
+  if (!target || !target.dataset.studyPlanHand) {
+    return;
+  }
+
+  setView("hands");
+  selectHand(target.dataset.studyPlanHand).catch((error) => showToast(error.message));
 });
 
 elements.importList.addEventListener("click", async (event) => {
@@ -1991,7 +2231,10 @@ elements.liveForm.addEventListener("submit", async (event) => {
     render();
     setView("hands");
     if (payload.hand?.id) {
-      await loadSimilarHands(payload.hand.id);
+      await Promise.all([
+        loadSimilarHands(payload.hand.id),
+        loadDecisionReview(payload.hand.id)
+      ]);
     }
     showToast(payload.duplicate ? "Live hand was already saved." : "Live hand saved.");
   } catch (error) {
