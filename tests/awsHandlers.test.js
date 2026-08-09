@@ -73,7 +73,7 @@ test("API Lambda strips HTTP API stage prefix from routes", async () => {
   const payload = JSON.parse(response.body);
 
   assert.equal(response.statusCode, 200);
-  assert.equal(payload.service, "poker-felt-scope");
+  assert.equal(payload.service, "backdoor-flush");
 });
 
 test("AWS user id comes from Cognito JWT claims when present", () => {

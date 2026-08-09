@@ -1,7 +1,7 @@
 {
-  "name": "poker-felt-scope",
-  "version": "0.9.0",
-  "description": "A small poker hand history analyzer.",
+  "name": "backdoor-flush",
+  "version": "0.9.1",
+  "description": "A small poker hand review and study desk.",
   "type": "module",
   "private": true,
   "scripts": {

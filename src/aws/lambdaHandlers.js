@@ -99,7 +99,7 @@ export async function api(event) {
     if (pathname === "/api/health" && method === "GET") {
       return jsonResponse(200, {
         status: "ok",
-        service: "poker-felt-scope",
+        service: "backdoor-flush",
         runtime: "aws-lambda",
         generatedAt: new Date().toISOString()
       });

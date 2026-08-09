@@ -84,7 +84,7 @@ export function createHttpServer({ store }) {
 
         sendJson(response, 200, {
           status: "ok",
-          service: "poker-felt-scope",
+          service: "backdoor-flush",
           generatedAt: new Date().toISOString()
         });
         return;

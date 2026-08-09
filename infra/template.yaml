@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: PokerFeltScope AWS backend
+Description: Backdoor Flush AWS backend
 
 Parameters:
   StageName:
@@ -94,7 +94,7 @@ Resources:
   UserPoolClient:
     Type: AWS::Cognito::UserPoolClient
     Properties:
-      ClientName: poker-felt-scope-web
+      ClientName: backdoor-flush-web
       UserPoolId: !Ref UserPool
       GenerateSecret: false
       PreventUserExistenceErrors: ENABLED
@@ -363,7 +363,7 @@ Resources:
   ApiFunctionErrorsAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmDescription: PokerFeltScope API Lambda errors
+      AlarmDescription: Backdoor Flush API Lambda errors
       Namespace: AWS/Lambda
       MetricName: Errors
       Dimensions:
@@ -379,7 +379,7 @@ Resources:
   ParseWorkerErrorsAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmDescription: PokerFeltScope parse worker errors
+      AlarmDescription: Backdoor Flush parse worker errors
       Namespace: AWS/Lambda
       MetricName: Errors
       Dimensions:

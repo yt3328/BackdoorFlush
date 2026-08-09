@@ -1,6 +1,6 @@
-# PokerFeltScope
+# Backdoor Flush
 
-PokerFeltScope is a small hand-history desk for reviewing poker sessions.
+Backdoor Flush is a small hand-history desk for reviewing poker sessions.
 
 The local app lets you upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, track bankroll sessions, and run quick equity checks.
 
@@ -19,7 +19,7 @@ Open:
 http://localhost:3400
 ```
 
-The local app stores state in `data/poker-felt-scope.json`. You can clear the session from the dashboard or delete that file when you want a clean table.
+The local app stores state in `data/poker-felt-scope.json`. That filename is kept for existing local workspaces; you can clear the session from the dashboard or delete that file when you want a clean table.
 
 ## What works
 
