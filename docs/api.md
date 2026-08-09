@@ -206,6 +206,7 @@ Clears imported hand-history records and parsed hands. Bankroll records are pres
 ```http
 GET /api/bankroll/sessions
 POST /api/bankroll/sessions
+POST /api/bankroll/imports
 GET /api/bankroll/sessions/:id
 PATCH /api/bankroll/sessions/:id
 DELETE /api/bankroll/sessions/:id
@@ -229,6 +230,19 @@ Create a bankroll session:
 ```
 
 The server calculates `profit`, `bbWon`, `hourlyRate`, and `bbPerHour`. If `profit` is sent directly, it overrides the buy-in/cash-out calculation.
+
+Import exported bankroll sessions:
+
+```json
+{
+  "source": "bankroll-csv",
+  "rawText": "\"Bankroll Name\"..."
+}
+```
+
+The importer reads cash-game and tournament session rows with start/end time, play time, location, buy-in, cash-out, profit, bankroll, exported session id, and stake fields. Bankroll transaction rows such as deposits, withdrawals, and initial bankroll entries are returned in `skippedRows` because they are not poker sessions.
+
+Duplicate imports are skipped using the exported `SessionId` when available, or a deterministic row key when it is not.
 
 `GET /api/bankroll/sessions/:id` returns the session, linked imports, linked hands, player summaries, review signals, a small review queue, and the biggest estimated hero wins/losses for that session.
 

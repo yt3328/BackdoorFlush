@@ -282,6 +282,11 @@ export async function api(event) {
       });
     }
 
+    if (pathname === "/api/bankroll/imports" && method === "POST") {
+      const result = await store.importBankrollSessions(eventBody(event));
+      return jsonResponse(result.importedCount > 0 ? 201 : 200, result);
+    }
+
     const bankrollSessionId = bankrollSessionIdFromPath(pathname);
     if (bankrollSessionId && method === "GET") {
       const detail = await store.bankrollSessionDetail(bankrollSessionId);

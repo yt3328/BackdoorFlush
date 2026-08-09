@@ -90,6 +90,12 @@ Bankroll sessions include:
 - `hourlyRate`
 - `bbPerHour`
 - `notes`
+- `externalKey`
+- `externalId`
+- `bankrollName`
+- `importSource`
+- `startedAt`
+- `endedAt`
 
 Imports include:
 

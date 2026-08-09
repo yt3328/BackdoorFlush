@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { buildDecisionBreakdown, buildStudyPlan, normalizeDecisionReviewPatch } from "../core/decisionReview.js";
 import { buildReviewQueue, normalizeReviewPatch } from "../core/handReview.js";
 import { handKey, hashText } from "../core/importIdentity.js";
+import { parseBankrollImport } from "../core/bankrollImport.js";
 import { buildLiveHand } from "../core/liveHandBuilder.js";
 import { buildSessionDetail } from "../core/sessionInsights.js";
 import { buildBankrollSession, summarizeBankrollSessions } from "../core/sessionTracker.js";
@@ -66,6 +67,10 @@ function publicBankrollSession(item) {
     ...rest,
     id: item.sessionId
   };
+}
+
+function bankrollSessionKey(session) {
+  return session.externalKey || "";
 }
 
 async function batchWriteAll(dynamo, sdk, requestItems) {
@@ -590,16 +595,24 @@ export class CloudHandStore {
 
   async listBankrollSessions() {
     const { dynamo, sdk } = this.clients;
-    const result = await dynamo.send(new sdk.QueryCommand({
-      TableName: this.sessionsTable,
-      KeyConditionExpression: "userId = :userId",
-      ExpressionAttributeValues: {
-        ":userId": this.userId
-      },
-      Limit: 200
-    }));
+    const items = [];
+    let exclusiveStartKey;
 
-    return (result.Items ?? [])
+    do {
+      const result = await dynamo.send(new sdk.QueryCommand({
+        TableName: this.sessionsTable,
+        KeyConditionExpression: "userId = :userId",
+        ExpressionAttributeValues: {
+          ":userId": this.userId
+        },
+        ExclusiveStartKey: exclusiveStartKey
+      }));
+
+      items.push(...(result.Items ?? []));
+      exclusiveStartKey = result.LastEvaluatedKey;
+    } while (exclusiveStartKey);
+
+    return items
       .map(publicBankrollSession)
       .sort((a, b) => String(b.date).localeCompare(String(a.date)));
   }
@@ -624,6 +637,83 @@ export class CloudHandStore {
     }));
 
     return publicBankrollSession(storedSession);
+  }
+
+  async importBankrollSessions(payload = {}) {
+    const { dynamo, sdk } = this.clients;
+    const rawText = payload.rawText ?? payload.text ?? "";
+    if (!String(rawText).trim()) {
+      throw new Error("Paste or upload a bankroll export first.");
+    }
+
+    const parsed = parseBankrollImport(rawText, {
+      source: payload.source,
+      bankrollName: payload.bankrollName,
+      defaultLocation: payload.defaultLocation,
+      defaultStakes: payload.defaultStakes
+    });
+    const existingSessions = await this.listBankrollSessions();
+    const existingKeys = new Set(existingSessions.map(bankrollSessionKey).filter(Boolean));
+    const importedAt = new Date().toISOString();
+    const storedSessions = [];
+    const duplicateRows = [];
+
+    for (const sessionPayload of parsed.sessions) {
+      if (sessionPayload.externalKey && existingKeys.has(sessionPayload.externalKey)) {
+        duplicateRows.push({
+          rowNumber: sessionPayload.importRowNumber,
+          section: "poker-session",
+          reason: "Session was already imported."
+        });
+        continue;
+      }
+
+      const sessionId = createId("sess");
+      const session = buildBankrollSession({
+        ...sessionPayload,
+        importedAt
+      }, {
+        id: sessionId,
+        createdAt: importedAt,
+        updatedAt: importedAt
+      });
+      const storedSession = {
+        ...session,
+        id: undefined,
+        userId: this.userId,
+        sessionId
+      };
+
+      storedSessions.push(storedSession);
+      if (session.externalKey) {
+        existingKeys.add(session.externalKey);
+      }
+    }
+
+    const writeRequests = storedSessions.map((session) => ({
+      PutRequest: {
+        Item: session
+      }
+    }));
+
+    for (let index = 0; index < writeRequests.length; index += 25) {
+      await batchWriteAll(dynamo, sdk, {
+        [this.sessionsTable]: writeRequests.slice(index, index + 25)
+      });
+    }
+
+    const skippedRows = [...parsed.skippedRows, ...duplicateRows];
+
+    return {
+      importedCount: storedSessions.length,
+      parsedSessionCount: parsed.sessions.length,
+      skippedCount: skippedRows.length,
+      duplicateCount: duplicateRows.length,
+      parsedRowCount: parsed.parsedRowCount,
+      source: parsed.source,
+      sessions: storedSessions.map(publicBankrollSession),
+      skippedRows: skippedRows.slice(0, 50)
+    };
   }
 
   async getBankrollSession(sessionId) {

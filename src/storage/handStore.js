@@ -4,6 +4,7 @@ import { mkdirSync } from "node:fs";
 import { buildDecisionBreakdown, buildStudyPlan, normalizeDecisionReviewPatch } from "../core/decisionReview.js";
 import { buildReviewQueue, normalizeReviewPatch } from "../core/handReview.js";
 import { handKey, hashText } from "../core/importIdentity.js";
+import { parseBankrollImport } from "../core/bankrollImport.js";
 import { buildLiveHand } from "../core/liveHandBuilder.js";
 import { buildSessionDetail } from "../core/sessionInsights.js";
 import { buildBankrollSession, summarizeBankrollSessions } from "../core/sessionTracker.js";
@@ -19,6 +20,10 @@ function emptyState() {
 
 function createId(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function bankrollSessionKey(session) {
+  return session.externalKey || "";
 }
 
 export class HandStore {
@@ -300,6 +305,68 @@ export class HandStore {
     this.save();
 
     return session;
+  }
+
+  importBankrollSessions(payload = {}) {
+    const rawText = payload.rawText ?? payload.text ?? "";
+    if (!String(rawText).trim()) {
+      throw new Error("Paste or upload a bankroll export first.");
+    }
+
+    const parsed = parseBankrollImport(rawText, {
+      source: payload.source,
+      bankrollName: payload.bankrollName,
+      defaultLocation: payload.defaultLocation,
+      defaultStakes: payload.defaultStakes
+    });
+    const existingKeys = new Set(this.state.bankrollSessions.map(bankrollSessionKey).filter(Boolean));
+    const importedAt = new Date().toISOString();
+    const sessions = [];
+    const duplicateRows = [];
+
+    for (const sessionPayload of parsed.sessions) {
+      if (sessionPayload.externalKey && existingKeys.has(sessionPayload.externalKey)) {
+        duplicateRows.push({
+          rowNumber: sessionPayload.importRowNumber,
+          section: "poker-session",
+          reason: "Session was already imported."
+        });
+        continue;
+      }
+
+      const id = createId("sess");
+      const session = buildBankrollSession({
+        ...sessionPayload,
+        importedAt
+      }, {
+        id,
+        createdAt: importedAt,
+        updatedAt: importedAt
+      });
+
+      sessions.push(session);
+      if (session.externalKey) {
+        existingKeys.add(session.externalKey);
+      }
+    }
+
+    if (sessions.length > 0) {
+      this.state.bankrollSessions = [...sessions, ...this.state.bankrollSessions];
+      this.save();
+    }
+
+    const skippedRows = [...parsed.skippedRows, ...duplicateRows];
+
+    return {
+      importedCount: sessions.length,
+      parsedSessionCount: parsed.sessions.length,
+      skippedCount: skippedRows.length,
+      duplicateCount: duplicateRows.length,
+      parsedRowCount: parsed.parsedRowCount,
+      source: parsed.source,
+      sessions,
+      skippedRows: skippedRows.slice(0, 50)
+    };
   }
 
   updateBankrollSession(id, payload) {

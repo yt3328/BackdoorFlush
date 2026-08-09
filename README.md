@@ -4,7 +4,7 @@ Backdoor Flush is a small hand-history desk for reviewing poker sessions.
 
 The local app lets you upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, track bankroll sessions, and run quick equity checks.
 
-Version 1.0 adds a decision review engine with street-by-street hero decisions, pot context, flags, per-decision notes, review checklists, and study-plan prompts.
+Version 1.1 adds bankroll CSV imports for exported cash-game and tournament sessions, duplicate detection, and imported-session metadata.
 
 ## Run it
 
@@ -31,6 +31,7 @@ Local mode:
 - Deletes individual imports or clears the local session.
 - Shows VPIP, PFR, 3-bet rate, aggression factor, position splits, and compact charts.
 - Tracks poker sessions with location, stakes, hours, buy-ins, cash-outs, results, hourly rate, and bb/hr.
+- Imports previous cash-game and tournament session exports into the bankroll tracker.
 - Shows bankroll curve and location-level session charts.
 - Links imports to bankroll sessions when uploading, from the import log, or through the sample loader.
 - Saves live-entered hands from a structured builder with seats, cards, actions, winners, and session links.
@@ -62,6 +63,7 @@ AWS mode:
 - Stores decision notes and checklist answers on hand records.
 - Serves study endpoints for tag performance, hand-library filters, similar spots, decision breakdowns, and study plans.
 - Writes bankroll sessions to a separate DynamoDB table.
+- Imports exported bankroll sessions through the same protected API used by the dashboard.
 - Exposes the same core stats/equity behavior through Lambda handlers.
 - Hosts the static dashboard from a private S3 bucket through CloudFront.
 
@@ -79,6 +81,7 @@ curl http://localhost:3400/api/study/library
 curl http://localhost:3400/api/study/plan
 curl http://localhost:3400/api/bankroll/summary
 curl http://localhost:3400/api/bankroll/sessions
+curl -X POST http://localhost:3400/api/bankroll/imports
 curl -X POST http://localhost:3400/api/live-hands
 curl -X DELETE http://localhost:3400/api/session
 ```
@@ -106,6 +109,7 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 - `src/core/stats.js` computes player summaries and review signals.
 - `src/core/equity.js` runs the Hold'em equity calculator.
 - `src/core/sessionTracker.js` normalizes bankroll sessions and summary stats.
+- `src/core/bankrollImport.js` reads exported bankroll/session CSV text.
 - `src/core/sessionInsights.js` combines bankroll sessions with linked imports and hands.
 - `src/http/apiServer.js` exposes the local API and serves the dashboard.
 - `src/storage/handStore.js` keeps local state.
@@ -119,6 +123,7 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 ## Next
 
 - Support more hand-history formats and larger real-world exports.
+- Add a separate bankroll transaction ledger for deposits, withdrawals, and transfers.
 - Add richer filters inside the session detail view.
 - Add decision review exports for selected sessions.
 - Replace the first-pass decision flags with a larger recommendation engine.

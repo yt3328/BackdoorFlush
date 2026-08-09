@@ -320,6 +320,13 @@ export function createHttpServer({ store }) {
         return;
       }
 
+      if (requestUrl.pathname === "/api/bankroll/imports" && request.method === "POST") {
+        const payload = await readJsonBody(request);
+        const result = store.importBankrollSessions(payload);
+        sendJson(response, result.importedCount > 0 ? 201 : 200, result);
+        return;
+      }
+
       const bankrollSessionId = bankrollSessionIdFromPath(requestUrl.pathname);
       if (bankrollSessionId && request.method === "GET") {
         const detail = store.bankrollSessionDetail(bankrollSessionId);

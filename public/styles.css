@@ -361,6 +361,13 @@ button {
   grid-template-columns: minmax(320px, 0.9fr) minmax(360px, 1.1fr);
 }
 
+.session-tools {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-width: 0;
+}
+
 .panel {
   min-width: 0;
   overflow: hidden;
@@ -1089,6 +1096,10 @@ button.tag-chip.active,
 .muted-line {
   color: var(--muted);
   line-height: 1.45;
+}
+
+.import-status {
+  min-height: 20px;
 }
 
 .linked-hand {

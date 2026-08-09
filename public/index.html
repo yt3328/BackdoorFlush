@@ -197,67 +197,90 @@
 
         <section class="view" id="view-sessions">
           <div class="split sessions-workspace">
-            <section class="panel">
-              <div class="panel-head">
-                <h3 id="bankroll-form-title">New Session</h3>
-              </div>
-              <form id="bankroll-form" class="form session-form">
-                <div class="form-grid">
-                  <label>
-                    Date
-                    <input name="date" type="date">
-                  </label>
-                  <label>
-                    Location
-                    <input name="location" value="PokerStars" autocomplete="off">
-                  </label>
-                  <label>
-                    Game
-                    <select name="gameType">
-                      <option value="cash">Cash</option>
-                      <option value="tournament">Tournament</option>
-                      <option value="home-game">Home game</option>
-                    </select>
-                  </label>
-                  <label>
-                    Stakes
-                    <input name="stakes" value="$0.05/$0.10" autocomplete="off">
-                  </label>
-                  <label>
-                    Table size
-                    <input name="tableSize" value="6" inputmode="numeric">
-                  </label>
-                  <label>
-                    Hours
-                    <input name="hours" value="2.5" inputmode="decimal">
-                  </label>
-                  <label>
-                    Buy-in
-                    <input name="buyIn" value="50" inputmode="decimal">
-                  </label>
-                  <label>
-                    Cash-out
-                    <input name="cashOut" value="64" inputmode="decimal">
-                  </label>
-                  <label>
-                    Result
-                    <input name="profit" value="" inputmode="decimal">
-                  </label>
-                  <label>
-                    Big blind
-                    <input name="bigBlind" value="0.10" inputmode="decimal">
-                  </label>
+            <div class="session-tools">
+              <section class="panel">
+                <div class="panel-head">
+                  <h3 id="bankroll-form-title">New Session</h3>
                 </div>
-                <label>
-                  Notes
-                  <textarea name="notes" rows="5"></textarea>
-                </label>
-                <div class="form-actions">
-                  <button id="bankroll-submit" class="button" type="submit">Add Session</button>
-                  <button id="bankroll-cancel" class="button secondary" type="button" hidden>New Session</button>
+                <form id="bankroll-form" class="form session-form">
+                  <div class="form-grid">
+                    <label>
+                      Date
+                      <input name="date" type="date">
+                    </label>
+                    <label>
+                      Location
+                      <input name="location" value="PokerStars" autocomplete="off">
+                    </label>
+                    <label>
+                      Game
+                      <select name="gameType">
+                        <option value="cash">Cash</option>
+                        <option value="tournament">Tournament</option>
+                        <option value="home-game">Home game</option>
+                      </select>
+                    </label>
+                    <label>
+                      Stakes
+                      <input name="stakes" value="$0.05/$0.10" autocomplete="off">
+                    </label>
+                    <label>
+                      Table size
+                      <input name="tableSize" value="6" inputmode="numeric">
+                    </label>
+                    <label>
+                      Hours
+                      <input name="hours" value="2.5" inputmode="decimal">
+                    </label>
+                    <label>
+                      Buy-in
+                      <input name="buyIn" value="50" inputmode="decimal">
+                    </label>
+                    <label>
+                      Cash-out
+                      <input name="cashOut" value="64" inputmode="decimal">
+                    </label>
+                    <label>
+                      Result
+                      <input name="profit" value="" inputmode="decimal">
+                    </label>
+                    <label>
+                      Big blind
+                      <input name="bigBlind" value="0.10" inputmode="decimal">
+                    </label>
+                  </div>
+                  <label>
+                    Notes
+                    <textarea name="notes" rows="5"></textarea>
+                  </label>
+                  <div class="form-actions">
+                    <button id="bankroll-submit" class="button" type="submit">Add Session</button>
+                    <button id="bankroll-cancel" class="button secondary" type="button" hidden>New Session</button>
+                  </div>
+                </form>
+              </section>
+
+              <section class="panel">
+                <div class="panel-head">
+                  <h3>Import Sessions</h3>
                 </div>
-              </form>
-            </section>
+                <form id="bankroll-import-form" class="form">
+                  <label>
+                    CSV export
+                    <input id="bankroll-import-file" name="bankrollImportFile" type="file" accept=".csv,.txt,text/csv,text/plain">
+                  </label>
+                  <label>
+                    Export text
+                    <textarea name="rawText" rows="8"></textarea>
+                  </label>
+                  <div class="form-actions">
+                    <button class="button" type="submit">Import Sessions</button>
+                    <button id="clear-bankroll-import" class="button secondary" type="button">Clear Text</button>
+                  </div>
+                  <div id="bankroll-import-status" class="import-status muted-line"></div>
+                </form>
+              </section>
+            </div>
 
             <section class="panel">
               <div class="panel-head">

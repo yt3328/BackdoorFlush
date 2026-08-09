@@ -258,6 +258,53 @@ test("bankroll session endpoints create, summarize, and delete sessions", async 
   assert.equal(deletePayload.session.id, createPayload.session.id);
 });
 
+test("bankroll import endpoint imports exported cash-game sessions and skips duplicates", async () => {
+  const rawText = `"Bankroll Name"
+"Default"
+"Transaction Date","Amount","Note","Update Date"
+"2023-03-14 15:36","0.00","Withdrawal","2023-03-14 15:36"
+"2023-03-14 15:36","0.00","Initial bankroll","2023-03-14 15:36"
+
+Cash Games
+
+"Start Time","End Time","Weekday","Break Minutes","Play Time","Game","Limit Type","Location","Buy In","Cashed Out","Profit","Note","Location Type","State","Bankroll","Tips","SessionId","Stake"
+"2026-08-08 21:22","2026-08-09 00:22","Sat","0","3:00","Texas Holdem","No Limit","Real Canadian","2000.00","0.00","-2000.00","","Casino","Completed","Default","0.00","362","2/5/10"
+"2026-08-07 20:30","2026-08-07 23:30","Fri","0","3:00","Texas Holdem","No Limit","Real Canadian","1500.00","1725.00","225.00","","Casino","Completed","Default","0.00","361","2/5/10"`;
+
+  const importResponse = await dispatch({
+    method: "POST",
+    url: "/api/bankroll/imports",
+    body: {
+      rawText,
+      source: "bankroll-csv"
+    }
+  });
+  const importPayload = await importResponse.json();
+  const summaryResponse = await dispatch({ url: "/api/bankroll/summary" });
+  const summaryPayload = await summaryResponse.json();
+  const duplicateResponse = await dispatch({
+    method: "POST",
+    url: "/api/bankroll/imports",
+    body: {
+      rawText,
+      source: "bankroll-csv"
+    }
+  });
+  const duplicatePayload = await duplicateResponse.json();
+
+  assert.equal(importResponse.status, 201);
+  assert.equal(importPayload.importedCount, 2);
+  assert.equal(importPayload.skippedCount, 2);
+  assert.equal(importPayload.sessions[0].location, "Real Canadian");
+  assert.equal(importPayload.sessions[0].externalKey, "bankroll-session:cash:default:362");
+  assert.equal(summaryPayload.summary.sessionCount, 2);
+  assert.equal(summaryPayload.summary.totalProfit, -1775);
+  assert.equal(summaryPayload.summary.totalHours, 6);
+  assert.equal(duplicateResponse.status, 200);
+  assert.equal(duplicatePayload.importedCount, 0);
+  assert.equal(duplicatePayload.duplicateCount, 2);
+});
+
 test("imports can be linked to, moved between, and unlinked from bankroll sessions", async () => {
   const firstSessionResponse = await dispatch({
     method: "POST",

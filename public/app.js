@@ -105,6 +105,10 @@ const elements = {
   bankrollFormTitle: document.querySelector("#bankroll-form-title"),
   bankrollSubmit: document.querySelector("#bankroll-submit"),
   bankrollCancel: document.querySelector("#bankroll-cancel"),
+  bankrollImportForm: document.querySelector("#bankroll-import-form"),
+  bankrollImportFile: document.querySelector("#bankroll-import-file"),
+  bankrollImportStatus: document.querySelector("#bankroll-import-status"),
+  clearBankrollImport: document.querySelector("#clear-bankroll-import"),
   sessionList: document.querySelector("#session-list"),
   sessionSummary: document.querySelector("#session-summary"),
   sessionDetail: document.querySelector("#session-detail"),
@@ -1746,6 +1750,26 @@ function readSelectedFile(file) {
   });
 }
 
+function countLabel(count, label) {
+  return `${count} ${label}${count === 1 ? "" : "s"}`;
+}
+
+function bankrollImportSummary(payload) {
+  const duplicateCount = payload.duplicateCount ?? 0;
+  const skippedCount = Math.max(0, (payload.skippedCount ?? 0) - duplicateCount);
+  const parts = [countLabel(payload.importedCount ?? 0, "session") + " imported"];
+
+  if (duplicateCount > 0) {
+    parts.push(countLabel(duplicateCount, "duplicate") + " skipped");
+  }
+
+  if (skippedCount > 0) {
+    parts.push(countLabel(skippedCount, "non-session row") + " skipped");
+  }
+
+  return parts.join(" / ");
+}
+
 elements.navButtons.forEach((button) => {
   button.addEventListener("click", () => setView(button.dataset.view));
 });
@@ -2097,6 +2121,50 @@ elements.historyFile.addEventListener("change", async (event) => {
 elements.clearImportText.addEventListener("click", () => {
   elements.importForm.elements.rawText.value = "";
   elements.historyFile.value = "";
+});
+
+elements.bankrollImportFile.addEventListener("change", async (event) => {
+  const [file] = event.target.files;
+  if (!file) {
+    return;
+  }
+
+  try {
+    const rawText = await readSelectedFile(file);
+    elements.bankrollImportForm.elements.rawText.value = rawText;
+    elements.bankrollImportStatus.textContent = `${file.name} loaded.`;
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
+elements.clearBankrollImport.addEventListener("click", () => {
+  elements.bankrollImportForm.elements.rawText.value = "";
+  elements.bankrollImportFile.value = "";
+  elements.bankrollImportStatus.textContent = "";
+});
+
+elements.bankrollImportForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+
+  try {
+    elements.bankrollImportStatus.textContent = "Importing sessions...";
+    const payload = await api("/api/bankroll/imports", {
+      method: "POST",
+      body: {
+        rawText: form.get("rawText"),
+        source: "bankroll-csv"
+      }
+    });
+    state.selectedSessionId = payload.sessions?.[0]?.id ?? state.selectedSessionId;
+    await refresh();
+    elements.bankrollImportStatus.textContent = bankrollImportSummary(payload);
+    showToast(bankrollImportSummary(payload));
+  } catch (error) {
+    elements.bankrollImportStatus.textContent = error.message;
+    showToast(error.message);
+  }
 });
 
 elements.bankrollForm.addEventListener("submit", async (event) => {

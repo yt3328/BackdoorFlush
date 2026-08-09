@@ -16,6 +16,17 @@ function nullableNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function optionalTextFields(payload, fields) {
+  return fields.reduce((metadata, field) => {
+    const value = payload[field];
+    const text = String(value ?? "").trim();
+    if (text) {
+      metadata[field] = text;
+    }
+    return metadata;
+  }, {});
+}
+
 function round(value, places = 2) {
   const factor = 10 ** places;
   return Math.round((Number(value) + Number.EPSILON) * factor) / factor;
@@ -43,6 +54,18 @@ export function parseStakes(stakes) {
 }
 
 export function buildBankrollSession(payload = {}, defaults = {}) {
+  const metadata = optionalTextFields(payload, [
+    "bankrollName",
+    "locationType",
+    "state",
+    "externalId",
+    "externalKey",
+    "importSource",
+    "startedAt",
+    "endedAt",
+    "importedGame",
+    "importedAt"
+  ]);
   const parsedStakes = parseStakes(payload.stakes);
   const smallBlind = nullableNumber(payload.smallBlind) ?? parsedStakes.smallBlind;
   const bigBlind = nullableNumber(payload.bigBlind) ?? parsedStakes.bigBlind;
@@ -76,6 +99,10 @@ export function buildBankrollSession(payload = {}, defaults = {}) {
     hourlyRate: hours > 0 ? round(profit / hours) : 0,
     bbPerHour: hours > 0 ? round(bbWon / hours) : 0,
     notes: String(payload.notes || "").trim(),
+    ...metadata,
+    ...(payload.importRowNumber === undefined || payload.importRowNumber === null
+      ? {}
+      : { importRowNumber: Math.trunc(finiteNumber(payload.importRowNumber)) }),
     createdAt,
     updatedAt: defaults.updatedAt ?? createdAt
   };
