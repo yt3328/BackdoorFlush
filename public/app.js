@@ -10,13 +10,20 @@ const streetLabels = {
   "show-down": "Showdown"
 };
 const viewTitles = {
-  overview: "Overview",
+  overview: "Home",
   sessions: "Sessions",
   hands: "Hands",
   live: "Live Hand",
   equity: "Equity",
   imports: "Imports"
 };
+const homePeriodOptions = [
+  { value: "7d", label: "Last 7 Days", days: 7 },
+  { value: "30d", label: "Last 30 Days", days: 30 },
+  { value: "90d", label: "Last 90 Days", days: 90 },
+  { value: "ytd", label: "Year to Date" },
+  { value: "all", label: "All Time" }
+];
 const suggestedReviewTags = [
   "river-decision",
   "bluff",
@@ -135,6 +142,7 @@ const state = {
   bankrollTransactionSummary: emptyTransactionSummary,
   bankrollImportPreview: null,
   bankrollFilters: { ...emptyBankrollFilters },
+  homePeriod: "30d",
   players: [],
   leaks: [],
   reviewSpots: [],
@@ -194,6 +202,13 @@ const elements = {
   importChart: document.querySelector("#import-chart"),
   studySampleContext: document.querySelector("#study-sample-context"),
   overviewEmpty: document.querySelector("#overview-empty"),
+  homePeriodTitle: document.querySelector("#home-period-title"),
+  homePeriodNote: document.querySelector("#home-period-note"),
+  homePeriodTabs: document.querySelector("#home-period-tabs"),
+  homeFocus: document.querySelector("#home-focus"),
+  homeReviewSummary: document.querySelector("#home-review-summary"),
+  homeStrength: document.querySelector("#home-strength"),
+  homeWatch: document.querySelector("#home-watch"),
   bankrollChart: document.querySelector("#bankroll-chart"),
   locationChart: document.querySelector("#location-chart"),
   bankrollFilterControls: [...document.querySelectorAll("[data-bankroll-filter]")],
@@ -253,6 +268,7 @@ const elements = {
     linkedHands: document.querySelector("#metric-linked-hands"),
     leaks: document.querySelector("#metric-leaks"),
     profit: document.querySelector("#metric-profit"),
+    hours: document.querySelector("#metric-hours"),
     sessions: document.querySelector("#metric-sessions"),
     hourly: document.querySelector("#metric-hourly"),
     bbhr: document.querySelector("#metric-bbhr")
@@ -1042,6 +1058,7 @@ function loadDemoExperience({ quiet = false } = {}) {
   clearDashboardData();
   state.demoMode = true;
   state.showLanding = false;
+  state.homePeriod = "30d";
   state.bankrollSessions = sessions;
   state.bankrollSummary = summarizeBankrollSessions(sessions);
   state.bankrollTransactions = transactions;
@@ -1342,7 +1359,53 @@ function bankrollFilterActive() {
   return Object.values(state.bankrollFilters).some(Boolean);
 }
 
-function normalizedDateRange() {
+function bankrollViewLimited() {
+  return bankrollFilterActive() || homePeriodOption().value !== "all";
+}
+
+function dateKey(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function currentDateKey() {
+  return dateKey(new Date());
+}
+
+function daysBefore(date, days) {
+  const copy = new Date(date);
+  copy.setDate(copy.getDate() - Math.max(0, days - 1));
+  return copy;
+}
+
+function homePeriodOption(value = state.homePeriod) {
+  return homePeriodOptions.find((option) => option.value === value) ?? homePeriodOptions[1];
+}
+
+function homePeriodRange() {
+  const option = homePeriodOption();
+  const today = new Date(`${currentDateKey()}T12:00:00`);
+
+  if (option.value === "all") {
+    return {
+      startDate: "",
+      endDate: ""
+    };
+  }
+
+  if (option.value === "ytd") {
+    return {
+      startDate: `${today.getFullYear()}-01-01`,
+      endDate: currentDateKey()
+    };
+  }
+
+  return {
+    startDate: dateKey(daysBefore(today, option.days)),
+    endDate: currentDateKey()
+  };
+}
+
+function normalizedManualDateRange() {
   const startDate = state.bankrollFilters.startDate;
   const endDate = state.bankrollFilters.endDate;
 
@@ -1356,6 +1419,18 @@ function normalizedDateRange() {
   return {
     startDate,
     endDate
+  };
+}
+
+function normalizedDateRange() {
+  const manual = normalizedManualDateRange();
+  const period = homePeriodRange();
+  const startDates = [manual.startDate, period.startDate].filter(Boolean).sort();
+  const endDates = [manual.endDate, period.endDate].filter(Boolean).sort();
+
+  return {
+    startDate: startDates.at(-1) ?? "",
+    endDate: endDates[0] ?? ""
   };
 }
 
@@ -1385,9 +1460,7 @@ function filteredBankrollSessions() {
 }
 
 function currentBankrollSummary() {
-  return bankrollFilterActive()
-    ? summarizeBankrollSessions(filteredBankrollSessions())
-    : state.bankrollSummary;
+  return summarizeBankrollSessions(filteredBankrollSessions());
 }
 
 function uniqueBankrollValues(field) {
@@ -1415,6 +1488,44 @@ function setBankrollSelectOptions(name, label, values) {
   control.value = state.bankrollFilters[name];
 }
 
+function bankrollViewParts() {
+  const parts = [homePeriodOption().label];
+  const manualRange = normalizedManualDateRange();
+
+  if (manualRange.startDate && manualRange.endDate) {
+    parts.push(`${formatLongDate(manualRange.startDate)} to ${formatLongDate(manualRange.endDate)}`);
+  } else if (manualRange.startDate) {
+    parts.push(`since ${formatLongDate(manualRange.startDate)}`);
+  } else if (manualRange.endDate) {
+    parts.push(`through ${formatLongDate(manualRange.endDate)}`);
+  }
+
+  for (const name of ["location", "gameType", "stakes"]) {
+    if (state.bankrollFilters[name]) {
+      parts.push(state.bankrollFilters[name]);
+    }
+  }
+
+  return parts;
+}
+
+function renderHomePeriodControls() {
+  const option = homePeriodOption();
+  const summary = currentBankrollSummary();
+  const { startDate, endDate } = normalizedDateRange();
+
+  elements.homePeriodTitle.textContent = option.label;
+  elements.homePeriodNote.textContent = summary.sessionCount > 0
+    ? option.value === "all" && !startDate && !endDate
+      ? `${summary.sessionCount} sessions across all logged results.`
+      : `${summary.sessionCount} sessions from ${startDate ? formatLongDate(startDate) : "your first logged session"}${endDate ? ` through ${formatLongDate(endDate)}` : ""}.`
+    : `No sessions in ${option.label.toLowerCase()}.`;
+
+  for (const button of elements.homePeriodTabs.querySelectorAll("[data-home-period]")) {
+    button.classList.toggle("active", button.dataset.homePeriod === state.homePeriod);
+  }
+}
+
 function renderBankrollFilters() {
   setBankrollSelectOptions("location", "All locations", uniqueBankrollValues("location"));
   setBankrollSelectOptions("gameType", "All games", uniqueBankrollValues("gameType"));
@@ -1428,26 +1539,11 @@ function renderBankrollFilters() {
   }
 
   const filteredSessions = filteredBankrollSessions();
-  const parts = [];
-  const { startDate, endDate } = normalizedDateRange();
-
-  if (startDate && endDate) {
-    parts.push(`${formatLongDate(startDate)} to ${formatLongDate(endDate)}`);
-  } else if (startDate) {
-    parts.push(`since ${formatLongDate(startDate)}`);
-  } else if (endDate) {
-    parts.push(`through ${formatLongDate(endDate)}`);
-  }
-
-  for (const name of ["location", "gameType", "stakes"]) {
-    if (state.bankrollFilters[name]) {
-      parts.push(state.bankrollFilters[name]);
-    }
-  }
+  const parts = bankrollViewParts();
 
   elements.bankrollFilterSummary.textContent = parts.length
     ? `${filteredSessions.length} of ${state.bankrollSessions.length} sessions shown / ${parts.join(" / ")}`
-    : `${state.bankrollSessions.length} sessions shown / no bankroll filters applied`;
+    : `${state.bankrollSessions.length} sessions shown`;
 }
 
 function sessionId(session) {
@@ -1583,10 +1679,10 @@ function renderTags(tags, { interactive = false, activeTags = [] } = {}) {
 
 function renderSparkline(points) {
   if (!points.length) {
-    return bankrollFilterActive()
+    return bankrollViewLimited() || state.bankrollSessions.length > 0
       ? renderEmptyState({
-        title: "No sessions match these filters",
-        body: "Adjust the date, location, game, or stakes filters to bring sessions back into view.",
+        title: "No sessions in this view",
+        body: "Adjust the period, date, location, game, or stakes filters to bring sessions back into view.",
         secondaryLabel: "",
         compact: true
       })
@@ -1717,6 +1813,7 @@ function renderMetrics() {
     compact: true,
     signed: true
   });
+  elements.metrics.hours.textContent = formatNumber(bankrollSummary.totalHours, 1);
   elements.metrics.sessions.textContent = bankrollSummary.sessionCount;
   elements.metrics.hourly.textContent = `${formatCurrency(bankrollSummary.hourlyRate, {
     compact: true,
@@ -2476,10 +2573,10 @@ function renderBankrollCharts() {
   const maxProfit = Math.max(1, ...locations.map((item) => Math.abs(item.profit)));
 
   if (locations.length === 0) {
-    elements.locationChart.innerHTML = bankrollFilterActive()
+    elements.locationChart.innerHTML = bankrollViewLimited() || state.bankrollSessions.length > 0
       ? renderEmptyState({
-        title: "No locations match these filters",
-        body: "Try a wider date range or remove the location filter.",
+        title: "No locations in this view",
+        body: "Try a wider period or remove detailed filters.",
         compact: true,
         secondaryLabel: ""
       })
@@ -2606,14 +2703,211 @@ function renderStudyPlan() {
     .join("");
 }
 
+function openReviewHands() {
+  const queuedIds = new Set(state.reviewSpots.filter((spot) => !spot.reviewedAt).map((spot) => spot.id));
+  const taggedOpenHands = state.hands.filter((hand) => !hand.reviewedAt && handTags(hand).length > 0);
+  const queuedHands = state.hands.filter((hand) => queuedIds.has(hand.id));
+
+  return [...new Map([...queuedHands, ...taggedOpenHands].map((hand) => [hand.id, hand])).values()];
+}
+
+function unresolvedTagRows() {
+  const rows = new Map();
+
+  for (const hand of openReviewHands()) {
+    for (const tag of handTags(hand)) {
+      const current = rows.get(tag) ?? {
+        tag,
+        count: 0,
+        result: 0,
+        handIds: []
+      };
+      current.count += 1;
+      current.result += estimatedHeroResult(hand);
+      current.handIds.push(hand.id);
+      rows.set(tag, current);
+    }
+  }
+
+  return [...rows.values()].sort((a, b) => (
+    b.count - a.count ||
+    Math.abs(b.result) - Math.abs(a.result) ||
+    tagLabel(a.tag).localeCompare(tagLabel(b.tag))
+  ));
+}
+
+function strongestStudyTag() {
+  return [...state.studyTags]
+    .filter((row) => Number(row.totalResult) > 0 && Number(row.handCount) > 0)
+    .sort((a, b) => Number(b.totalResult) - Number(a.totalResult))[0] ?? null;
+}
+
+function weakestStudyTag() {
+  return [...state.studyTags]
+    .filter((row) => Number(row.totalResult) < 0 && Number(row.handCount) > 0)
+    .sort((a, b) => Number(a.totalResult) - Number(b.totalResult))[0] ?? null;
+}
+
+function focusRecommendation() {
+  const planItem = state.studyPlan.find((item) => item.handIds?.length);
+  if (planItem) {
+    return {
+      eyebrow: "Recommended Focus",
+      title: planItem.title,
+      detail: planItem.detail,
+      count: planItem.count,
+      handId: planItem.handIds[0],
+      actionLabel: "Start Review"
+    };
+  }
+
+  const [tagRow] = unresolvedTagRows();
+  if (tagRow) {
+    return {
+      eyebrow: "Potential Area to Review",
+      title: tagLabel(tagRow.tag),
+      detail: `${tagRow.count} open saved hands carry this tag. Start there before drawing bigger conclusions.`,
+      count: tagRow.count,
+      tag: tagRow.tag,
+      handId: tagRow.handIds[0],
+      actionLabel: "Review Related Hands"
+    };
+  }
+
+  if (state.reviewSpots.length > 0) {
+    const [spot] = state.reviewSpots;
+    return {
+      eyebrow: "Next Hand",
+      title: `Hand #${spot.handNumber}`,
+      detail: `${spot.reasons.join(" / ")} is waiting in your review list.`,
+      count: state.reviewSpots.length,
+      handId: spot.id,
+      actionLabel: "Open Hand"
+    };
+  }
+
+  return null;
+}
+
+function renderInsightEmpty(target, title, body) {
+  target.innerHTML = renderEmptyState({
+    title,
+    body,
+    primaryLabel: "Build Live Hand",
+    primaryView: "live",
+    secondaryLabel: "Explore Demo",
+    compact: true
+  });
+}
+
+function renderHomeFocus() {
+  const focus = focusRecommendation();
+
+  if (!focus) {
+    renderInsightEmpty(
+      elements.homeFocus,
+      "Keep logging to unlock a focus area",
+      "Save and review a few hands, then Backdoor Flush will surface the most useful next study target."
+    );
+    return;
+  }
+
+  elements.homeFocus.innerHTML = `
+    <article class="focus-callout">
+      <span class="subtle">${escapeHtml(focus.eyebrow)}</span>
+      <strong>${escapeHtml(focus.title)}</strong>
+      <p>${escapeHtml(focus.detail)}</p>
+      <div class="focus-meta">
+        <span>${focus.count} ${focus.count === 1 ? "hand" : "hands"}</span>
+        <button class="button" type="button" data-open-review-hand="${escapeHtml(focus.handId)}">${escapeHtml(focus.actionLabel)}</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderHomeReviewSummary() {
+  const openSpots = openReviewHands();
+  const highPriority = openSpots.filter((hand) => Math.abs(estimatedHeroResult(hand)) >= 300 || trackedPot(hand) >= 600).length;
+  const firstSpot = openSpots[0];
+
+  if (openSpots.length === 0) {
+    elements.homeReviewSummary.innerHTML = renderEmptyState({
+      title: "No hands waiting",
+      body: "Save difficult or interesting hands and they will appear here for later review.",
+      primaryLabel: "Build Live Hand",
+      primaryView: "live",
+      compact: true
+    });
+    return;
+  }
+
+  elements.homeReviewSummary.innerHTML = `
+    <div class="review-count-card">
+      <span class="subtle">Open review work</span>
+      <strong>${openSpots.length} hands waiting</strong>
+      <p>${highPriority} high priority / ${openSpots.length - highPriority} normal</p>
+      <button class="button" type="button" data-open-review-hand="${escapeHtml(firstSpot.id)}">Start Review</button>
+    </div>
+  `;
+}
+
+function renderHomeProfile() {
+  const strength = strongestStudyTag();
+  const watch = weakestStudyTag() ?? unresolvedTagRows()[0] ?? null;
+
+  elements.homeStrength.innerHTML = strength
+    ? `
+      <article class="sample-profile-card">
+        <span class="subtle">Captured hands</span>
+        <strong>${escapeHtml(tagLabel(strength.tag))}</strong>
+        <p>${strength.handCount} hands / ${formatCurrency(strength.totalResult, { signed: true })} sample result.</p>
+        <button class="button secondary" type="button" data-open-review-tag="${escapeHtml(strength.tag)}">View Hands</button>
+      </article>
+    `
+    : renderEmptyState({
+      title: "No strength surfaced yet",
+      body: "Tagged, reviewed hands will reveal where your captured sample is performing well.",
+      secondaryLabel: "",
+      compact: true
+    });
+
+  elements.homeWatch.innerHTML = watch
+    ? `
+      <article class="sample-profile-card watch">
+        <span class="subtle">${watch.totalResult < 0 ? "Captured hands" : "Open review sample"}</span>
+        <strong>${escapeHtml(tagLabel(watch.tag))}</strong>
+        <p>${watch.handCount ?? watch.count} hands / ${
+          watch.totalResult !== undefined
+            ? `${formatCurrency(watch.totalResult, { signed: true })} sample result.`
+            : "most common unresolved tag."
+        }</p>
+        <button class="button secondary" type="button" data-open-review-tag="${escapeHtml(watch.tag)}">Review Related</button>
+      </article>
+    `
+    : renderEmptyState({
+      title: "No watch area yet",
+      body: "Backdoor Flush will point to potential review areas after you save and tag hands.",
+      secondaryLabel: "",
+      compact: true
+    });
+}
+
+function renderHomeInsights() {
+  renderHomeFocus();
+  renderHomeReviewSummary();
+  renderHomeProfile();
+}
+
 function renderSessionSummary() {
   const summary = currentBankrollSummary();
   const transactionSummary = state.bankrollTransactionSummary;
   const bankrollBalance = summary.totalProfit + transactionSummary.totalAmount;
-  const secondaryLabel = bankrollFilterActive() ? "Avg/session" : "Bankroll balance";
-  const secondaryValue = bankrollFilterActive()
+  const limitedView = bankrollViewLimited();
+  const secondaryLabel = limitedView ? "Avg/session" : "Bankroll balance";
+  const secondaryValue = limitedView
     ? summary.averageProfit
     : bankrollBalance;
+  const viewLabel = bankrollViewParts().join(" / ");
 
   elements.sessionSummary.innerHTML = `
     <div class="session-kpis">
@@ -2638,6 +2932,7 @@ function renderSessionSummary() {
         <strong>${formatNumber(summary.bbPerHour, 1)}</strong>
       </div>
     </div>
+    <p class="session-scope-note">Showing ${escapeHtml(viewLabel)} session results.</p>
   `;
 }
 
@@ -2784,7 +3079,7 @@ function resetTransactionForm() {
   elements.transactionForm.elements.type.value = "deposit";
   elements.transactionForm.elements.bankrollName.value = "Default";
   elements.transactionForm.dataset.editingTransactionId = "";
-  elements.transactionFormTitle.textContent = "Transaction Ledger";
+  elements.transactionFormTitle.textContent = "Bankroll Transactions";
   elements.transactionSubmit.textContent = "Add Transaction";
   elements.transactionCancel.hidden = true;
 }
@@ -2826,7 +3121,7 @@ function renderSessionDetail(visibleSessions = state.bankrollSessions) {
     : null;
 
   if (!selectedSession) {
-    elements.sessionDetail.innerHTML = bankrollFilterActive()
+    elements.sessionDetail.innerHTML = bankrollViewLimited()
       ? renderEmptyState({
         title: "Select a matching session",
         body: "Session details show linked imports, saved hands, and the largest swings for the selected session.",
@@ -2884,7 +3179,7 @@ function renderSessionDetail(visibleSessions = state.bankrollSessions) {
         }
       </div>
       <div class="linked-section">
-        <h4>Review Queue</h4>
+        <h4>Hands to Review</h4>
         ${
           sessionQueue.length
             ? sessionQueue.map((spot) => `
@@ -2918,11 +3213,11 @@ function renderSessions() {
   renderSessionSummary();
 
   if (sessions.length === 0) {
-    elements.sessionList.innerHTML = bankrollFilterActive()
+    elements.sessionList.innerHTML = bankrollViewLimited() || state.bankrollSessions.length > 0
       ? renderEmptyState({
-        title: "No sessions match these filters",
-        body: "Widen the filter range or reset filters from the Overview page.",
-        primaryLabel: "Overview",
+        title: "No sessions in this view",
+        body: "Widen the Home period or adjust the detailed filters.",
+        primaryLabel: "Home",
         primaryView: "overview",
         secondaryLabel: "",
         compact: true
@@ -3538,6 +3833,7 @@ function render() {
   }
 
   renderBankrollFilters();
+  renderHomePeriodControls();
   renderMetrics();
   renderPlayerOptions();
   renderSessionOptions();
@@ -3555,6 +3851,7 @@ function render() {
   renderReviewQueue();
   renderTagSummary();
   renderStudyPlan();
+  renderHomeInsights();
   renderBankrollImportPreview();
   renderTransactions();
   renderSessions();
@@ -3658,6 +3955,7 @@ async function loadReviewQueue() {
   if (state.demoMode) {
     renderMetrics();
     renderReviewQueue();
+    renderHomeInsights();
     renderSessions();
     return;
   }
@@ -3666,6 +3964,7 @@ async function loadReviewQueue() {
   state.reviewSpots = payload.spots;
   renderMetrics();
   renderReviewQueue();
+  renderHomeInsights();
   renderSessions();
 }
 
@@ -3717,12 +4016,14 @@ async function loadDecisionReview(handId) {
 async function loadStudyPlan() {
   if (state.demoMode) {
     renderStudyPlan();
+    renderHomeInsights();
     return;
   }
 
   const payload = await api("/api/study/plan");
   state.studyPlan = payload.items;
   renderStudyPlan();
+  renderHomeInsights();
 }
 
 async function selectHand(handId) {
@@ -3819,6 +4120,24 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  const reviewHandTarget = event.target.closest("[data-open-review-hand]");
+  if (reviewHandTarget) {
+    event.preventDefault();
+    setView("hands");
+    selectHand(reviewHandTarget.dataset.openReviewHand).catch((error) => showToast(error.message));
+    return;
+  }
+
+  const reviewTagTarget = event.target.closest("[data-open-review-tag]");
+  if (reviewTagTarget) {
+    event.preventDefault();
+    setView("hands");
+    elements.handTagFilter.value = reviewTagTarget.dataset.openReviewTag;
+    elements.handReviewFilter.value = "false";
+    renderHands();
+    return;
+  }
+
   const viewTarget = event.target.closest("[data-jump-view]");
   if (viewTarget) {
     event.preventDefault();
@@ -3833,6 +4152,22 @@ document.addEventListener("click", (event) => {
 
 elements.navButtons.forEach((button) => {
   button.addEventListener("click", () => setView(button.dataset.view));
+});
+
+elements.homePeriodTabs.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-home-period]");
+  if (!target) {
+    return;
+  }
+
+  state.homePeriod = homePeriodOptions.some((option) => option.value === target.dataset.homePeriod)
+    ? target.dataset.homePeriod
+    : "30d";
+  renderBankrollFilters();
+  renderHomePeriodControls();
+  renderMetrics();
+  renderBankrollCharts();
+  renderSessions();
 });
 
 elements.livePlayerCount.addEventListener("click", (event) => {
@@ -4053,6 +4388,7 @@ for (const control of elements.bankrollFilterControls) {
   control.addEventListener("change", () => {
     state.bankrollFilters[control.dataset.bankrollFilter] = control.value;
     renderBankrollFilters();
+    renderHomePeriodControls();
     renderMetrics();
     renderBankrollCharts();
     renderSessions();
@@ -4062,6 +4398,7 @@ for (const control of elements.bankrollFilterControls) {
 elements.bankrollResetFilters.addEventListener("click", () => {
   state.bankrollFilters = { ...emptyBankrollFilters };
   renderBankrollFilters();
+  renderHomePeriodControls();
   renderMetrics();
   renderBankrollCharts();
   renderSessions();

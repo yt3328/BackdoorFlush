@@ -4,7 +4,7 @@ Backdoor Flush is a small hand-history desk for reviewing poker sessions.
 
 The local app lets you upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, track bankroll sessions, and run quick equity checks.
 
-Version 1.7 adds a public first-run landing page, a read-only demo workspace, and clearer empty states that guide new users toward logging sessions, capturing hands, and reviewing spots.
+Version 1.8 reorganizes Home around performance, hands to review, and a deterministic weekly focus area.
 
 ## Run it
 
@@ -34,19 +34,19 @@ Local mode:
 - Imports previous cash-game and tournament session exports into the bankroll tracker.
 - Previews bankroll exports before import, including new sessions, ledger transactions, duplicates, and skipped rows.
 - Tracks bankroll transactions separately from poker-session results.
-- Shows bankroll curve and location-level session charts.
+- Shows bankroll progress, location-level session charts, and common Home periods such as 7D, 30D, 90D, YTD, and All.
 - Links imports to bankroll sessions when uploading, from the import log, or through the sample loader.
 - Saves live-entered hands from a structured builder with seats, cards, actions, winners, and session links.
 - Offers a read-only demo workspace that stays separate from a signed-in user's real data.
 - Opens a session detail view with linked imports, linked hands, and estimated hero results from parsed actions.
 - Saves tags and notes on individual hands.
-- Builds a review queue from large swings, tagged hands, river decisions, and unreviewed spots.
+- Builds a hands-to-review list from large swings, tagged hands, river decisions, and unreviewed spots.
 - Filters the hand library by tag, review status, session, hero position, result type, and pot/result sort.
 - Summarizes tag performance across saved review spots.
 - Finds similar hands from the selected hand's tags, hero position, streets, action pattern, pot size, and result.
 - Breaks hands into hero decisions with pot size, bet size, pot odds, SPR, active players, and automatic flags.
 - Saves notes and checklist answers on individual decisions.
-- Builds a study plan from open river decisions, flagged decisions, tagged hands, and biggest losses.
+- Builds a "what to work on next" list from open river decisions, flagged decisions, tagged hands, and biggest losses.
 - Replays parsed actions on a visual table with step controls.
 - Flags a few basic review signals from the current sample.
 - Runs a Monte Carlo equity check for 2-card Hold'em hands.
