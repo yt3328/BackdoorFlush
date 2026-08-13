@@ -446,7 +446,7 @@
                   </label>
                   <label>
                     Stakes
-                    <input name="stakes" value="$1/$3" autocomplete="off">
+                    <input id="live-stakes" name="stakes" value="$1/$3" autocomplete="off">
                   </label>
                   <label>
                     Hand #
@@ -480,16 +480,29 @@
                   <div class="builder-head">
                     <h4>Table Setup</h4>
                   </div>
-                  <div id="live-player-count" class="seat-count-control" aria-label="Players at table">
-                    <button class="active" type="button" data-live-player-count="2">2</button>
-                    <button type="button" data-live-player-count="3">3</button>
-                    <button type="button" data-live-player-count="4">4</button>
-                    <button type="button" data-live-player-count="5">5</button>
-                    <button type="button" data-live-player-count="6">6</button>
-                    <button type="button" data-live-player-count="7">7</button>
-                    <button type="button" data-live-player-count="8">8</button>
-                    <button type="button" data-live-player-count="9">9</button>
-                    <button type="button" data-live-player-count="10">10</button>
+                  <div class="table-setup-grid">
+                    <div>
+                      <span class="subtle">Players</span>
+                      <div id="live-player-count" class="seat-count-control" aria-label="Players at table">
+                        <button class="active" type="button" data-live-player-count="2">2</button>
+                        <button type="button" data-live-player-count="3">3</button>
+                        <button type="button" data-live-player-count="4">4</button>
+                        <button type="button" data-live-player-count="5">5</button>
+                        <button type="button" data-live-player-count="6">6</button>
+                        <button type="button" data-live-player-count="7">7</button>
+                        <button type="button" data-live-player-count="8">8</button>
+                        <button type="button" data-live-player-count="9">9</button>
+                        <button type="button" data-live-player-count="10">10</button>
+                      </div>
+                    </div>
+                    <div>
+                      <span class="subtle">Blinds</span>
+                      <div id="live-blind-presets" class="blind-presets" aria-label="Blind presets">
+                        <button type="button" data-blind-preset="$1/$3">1/3</button>
+                        <button type="button" data-blind-preset="$2/$5">2/5</button>
+                        <button type="button" data-blind-preset="$2/$5/$10">2/5/10</button>
+                      </div>
+                    </div>
                   </div>
                 </section>
 
@@ -503,6 +516,7 @@
                       <span>Player</span>
                       <span>Position</span>
                       <span>Stack</span>
+                      <span>Blind</span>
                     </div>
                   </div>
                 </section>
@@ -518,6 +532,7 @@
                     <button type="button" data-live-street="river">River</button>
                     <button type="button" data-live-street="show-down">Showdown</button>
                   </div>
+                  <div id="live-action-shortcuts" class="action-shortcuts" aria-label="Action shortcuts"></div>
                   <div class="live-action-compose">
                     <input id="live-action-street" type="hidden" value="hole-cards">
                     <select id="live-action-player" aria-label="Action player"></select>
@@ -532,6 +547,13 @@
                     <button id="live-add-action" class="button secondary" type="button">Add Action</button>
                   </div>
                   <div id="live-action-list" class="live-action-list"></div>
+                </section>
+
+                <section class="builder-block">
+                  <div class="builder-head">
+                    <h4>Showdown Cards</h4>
+                  </div>
+                  <div id="live-showdown-list" class="showdown-list"></div>
                 </section>
 
                 <label>
@@ -639,6 +661,19 @@
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <datalist id="live-position-options">
+      <option value="BTN"></option>
+      <option value="SB"></option>
+      <option value="BB"></option>
+      <option value="STR"></option>
+      <option value="UTG"></option>
+      <option value="UTG+1"></option>
+      <option value="MP"></option>
+      <option value="MP+1"></option>
+      <option value="LJ"></option>
+      <option value="HJ"></option>
+      <option value="CO"></option>
+    </datalist>
     <script src="/config.js"></script>
     <script src="/app.js" type="module"></script>
   </body>

@@ -41,17 +41,30 @@ function actionAmount(action) {
   return amount(action?.amount);
 }
 
+function forcedBetAmount(forcedBet) {
+  return amount(forcedBet?.amount);
+}
+
 function committedBefore(hand, player, actionIndex) {
-  return (hand.actions ?? [])
+  const forcedCommitment = (hand.forcedBets ?? [])
+    .filter((forcedBet) => forcedBet.player === player)
+    .reduce((sum, forcedBet) => sum + forcedBetAmount(forcedBet), 0);
+  const actionCommitment = (hand.actions ?? [])
     .slice(0, actionIndex)
     .filter((action) => action.player === player)
     .reduce((sum, action) => sum + actionAmount(action), 0);
+
+  return forcedCommitment + actionCommitment;
 }
 
 function potBefore(hand, actionIndex) {
-  return (hand.actions ?? [])
+  const forcedPot = (hand.forcedBets ?? [])
+    .reduce((sum, forcedBet) => sum + forcedBetAmount(forcedBet), 0);
+  const actionPot = (hand.actions ?? [])
     .slice(0, actionIndex)
     .reduce((sum, action) => sum + actionAmount(action), 0);
+
+  return forcedPot + actionPot;
 }
 
 function activePlayersBefore(hand, actionIndex) {

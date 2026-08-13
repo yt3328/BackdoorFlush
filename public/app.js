@@ -1,6 +1,6 @@
 import { createAuthClient } from "./auth.js";
 
-const positionOrder = ["BTN", "CO", "HJ", "LJ", "MP", "UTG+1", "UTG", "SB", "BB", "Unknown"];
+const positionOrder = ["BTN", "CO", "HJ", "LJ", "MP", "UTG+1", "UTG", "STR", "SB", "BB", "Unknown"];
 const streetOrder = ["hole-cards", "flop", "turn", "river", "show-down"];
 const streetLabels = {
   "hole-cards": "Preflop",
@@ -28,7 +28,7 @@ const suggestedReviewTags = [
   "live-hand"
 ];
 const liveTableSizes = [2, 3, 4, 5, 6, 7, 8, 9, 10];
-const livePositionOptions = ["BTN", "SB", "BB", "UTG", "UTG+1", "MP", "LJ", "HJ", "CO"];
+const livePositionOptions = ["BTN", "SB", "BB", "STR", "UTG", "UTG+1", "MP", "MP+1", "LJ", "HJ", "CO"];
 const liveDefaultPositions = {
   2: ["BTN", "BB"],
   3: ["BTN", "SB", "BB"],
@@ -38,8 +38,37 @@ const liveDefaultPositions = {
   7: ["BTN", "SB", "BB", "UTG", "LJ", "HJ", "CO"],
   8: ["BTN", "SB", "BB", "UTG", "UTG+1", "LJ", "HJ", "CO"],
   9: ["BTN", "SB", "BB", "UTG", "UTG+1", "MP", "LJ", "HJ", "CO"],
-  10: ["BTN", "SB", "BB", "UTG", "UTG+1", "MP", "MP", "LJ", "HJ", "CO"]
+  10: ["BTN", "SB", "BB", "UTG", "UTG+1", "MP", "MP+1", "LJ", "HJ", "CO"]
 };
+const liveStraddlePositions = {
+  2: ["BTN", "BB"],
+  3: ["BTN", "SB", "BB"],
+  4: ["BTN", "SB", "BB", "STR"],
+  5: ["BTN", "SB", "BB", "STR", "CO"],
+  6: ["BTN", "SB", "BB", "STR", "HJ", "CO"],
+  7: ["BTN", "SB", "BB", "STR", "LJ", "HJ", "CO"],
+  8: ["BTN", "SB", "BB", "STR", "UTG+1", "LJ", "HJ", "CO"],
+  9: ["BTN", "SB", "BB", "STR", "UTG+1", "MP", "LJ", "HJ", "CO"],
+  10: ["BTN", "SB", "BB", "STR", "UTG+1", "MP", "MP+1", "LJ", "HJ", "CO"]
+};
+const liveBlindTypes = [
+  { value: "", label: "--" },
+  { value: "small-blind", label: "SB" },
+  { value: "big-blind", label: "BB" },
+  { value: "straddle", label: "STR" },
+  { value: "ante", label: "Ante" }
+];
+const blindTypeLabels = {
+  "small-blind": "SB",
+  "big-blind": "BB",
+  straddle: "STR",
+  ante: "Ante"
+};
+const quickActionPresets = [
+  { type: "folds", label: "Fold" },
+  { type: "checks", label: "Check" },
+  { type: "calls", label: "Call" }
+];
 const cardSuitMap = {
   h: {
     entity: "&hearts;",
@@ -119,6 +148,7 @@ const state = {
   selectedHandId: null,
   livePlayerCount: 6,
   liveSeatDrafts: Array.from({ length: 10 }, (_, index) => defaultLiveSeat(index, 6)),
+  liveShowdownDrafts: {},
   liveActions: [],
   replayStep: 0,
   importPollTimer: null
@@ -186,16 +216,20 @@ const elements = {
   importSession: document.querySelector("#import-session"),
   liveForm: document.querySelector("#live-hand-form"),
   liveSession: document.querySelector("#live-session"),
+  liveStakes: document.querySelector("#live-stakes"),
   liveHero: document.querySelector("#live-hero"),
+  liveBlindPresets: document.querySelector("#live-blind-presets"),
   livePlayerCount: document.querySelector("#live-player-count"),
   liveSeatGrid: document.querySelector("#live-seat-grid"),
   liveStreetTabs: document.querySelector("#live-street-tabs"),
+  liveActionShortcuts: document.querySelector("#live-action-shortcuts"),
   liveActionStreet: document.querySelector("#live-action-street"),
   liveActionPlayer: document.querySelector("#live-action-player"),
   liveActionType: document.querySelector("#live-action-type"),
   liveActionAmount: document.querySelector("#live-action-amount"),
   liveAddAction: document.querySelector("#live-add-action"),
   liveActionList: document.querySelector("#live-action-list"),
+  liveShowdownList: document.querySelector("#live-showdown-list"),
   liveWinner: document.querySelector("#live-winner"),
   livePreview: document.querySelector("#live-preview"),
   historyFile: document.querySelector("#history-file"),
@@ -747,14 +781,21 @@ function estimatedHeroResult(hand) {
     return 0;
   }
 
-  const committed = hand.actions
+  const actionCommitment = hand.actions
     .filter((action) => action.player === hand.hero)
     .reduce((sum, action) => sum + (Number(action.amount) || 0), 0);
-  return Number(((Number(hand.winnings?.[hand.hero]) || 0) - committed).toFixed(2));
+  const forcedCommitment = (hand.forcedBets ?? [])
+    .filter((forcedBet) => forcedBet.player === hand.hero)
+    .reduce((sum, forcedBet) => sum + (Number(forcedBet.amount) || 0), 0);
+
+  return Number(((Number(hand.winnings?.[hand.hero]) || 0) - actionCommitment - forcedCommitment).toFixed(2));
 }
 
 function trackedPot(hand) {
-  return (hand.actions ?? []).reduce((sum, action) => sum + (Number(action.amount) || 0), 0);
+  const actionPot = (hand.actions ?? []).reduce((sum, action) => sum + (Number(action.amount) || 0), 0);
+  const forcedPot = (hand.forcedBets ?? []).reduce((sum, forcedBet) => sum + (Number(forcedBet.amount) || 0), 0);
+
+  return actionPot + forcedPot;
 }
 
 function handTags(hand) {
@@ -1021,17 +1062,125 @@ function renderHandFilterOptions() {
   elements.handSort.value = ["newest", "biggest-loss", "biggest-win", "biggest-pot", "unreviewed"].includes(previous.sort) ? previous.sort : "newest";
 }
 
-function defaultPositionForSeat(index, playerCount = state.livePlayerCount) {
-  return liveDefaultPositions[playerCount]?.[index] ?? livePositionOptions[index % livePositionOptions.length];
+function numericInput(value, fallback = 0) {
+  if (value === "" || value === null || value === undefined) {
+    return fallback;
+  }
+
+  const number = Number(String(value).replace(/[$,]/g, ""));
+  return Number.isFinite(number) ? number : fallback;
 }
 
-function defaultLiveSeat(index, playerCount = 6) {
+function parseStakeAmounts(stakes) {
+  return [...String(stakes ?? "").matchAll(/(?:\$|\b)(\d+(?:\.\d+)?)/g)]
+    .map((match) => Number(match[1]))
+    .filter((amount) => Number.isFinite(amount) && amount > 0);
+}
+
+function blindStructureFromStakes(stakes = "") {
+  const amounts = parseStakeAmounts(stakes);
+
+  return {
+    smallBlind: amounts[0] ?? 0,
+    bigBlind: amounts[1] ?? amounts[0] ?? 0,
+    straddle: amounts[2] ?? 0,
+    hasStraddle: amounts.length >= 3 && amounts[2] > 0
+  };
+}
+
+function currentBlindStructure() {
+  return blindStructureFromStakes(elements.liveStakes?.value ?? "");
+}
+
+function defaultPositionPlan(playerCount, structure = blindStructureFromStakes()) {
+  return (structure.hasStraddle ? liveStraddlePositions : liveDefaultPositions)[playerCount] ?? liveDefaultPositions[playerCount] ?? [];
+}
+
+function defaultPositionForSeat(index, playerCount = state.livePlayerCount, structure = blindStructureFromStakes()) {
+  return defaultPositionPlan(playerCount, structure)[index] ?? livePositionOptions[index % livePositionOptions.length];
+}
+
+function defaultBlindForPosition(position, structure = blindStructureFromStakes()) {
+  const normalizedPosition = String(position ?? "").trim().toUpperCase();
+
+  if (normalizedPosition === "SB" && structure.smallBlind > 0) {
+    return {
+      type: "small-blind",
+      amount: structure.smallBlind
+    };
+  }
+
+  if (normalizedPosition === "BB" && structure.bigBlind > 0) {
+    return {
+      type: "big-blind",
+      amount: structure.bigBlind
+    };
+  }
+
+  if (normalizedPosition === "STR" && structure.straddle > 0) {
+    return {
+      type: "straddle",
+      amount: structure.straddle
+    };
+  }
+
+  return {
+    type: "",
+    amount: ""
+  };
+}
+
+function defaultLiveSeat(index, playerCount = 6, structure = blindStructureFromStakes()) {
+  const position = defaultPositionForSeat(index, playerCount, structure);
+  const blind = defaultBlindForPosition(position, structure);
+
   return {
     seat: String(index + 1),
     name: index === 0 ? "Hero" : index < playerCount ? `Villain ${index}` : "",
-    position: defaultPositionForSeat(index, playerCount),
-    stack: index < playerCount ? "300" : ""
+    position,
+    stack: index < playerCount ? "300" : "",
+    blindType: blind.type,
+    blindAmount: blind.amount ? String(blind.amount) : ""
   };
+}
+
+function isDefaultPositionValue(index, value) {
+  const position = String(value ?? "").trim().toUpperCase();
+  if (!position) {
+    return true;
+  }
+
+  return liveTableSizes.some((playerCount) => (
+    liveDefaultPositions[playerCount]?.[index] === position ||
+    liveStraddlePositions[playerCount]?.[index] === position
+  ));
+}
+
+function applyBlindStructure({ forcePositions = false, forceBlinds = false } = {}) {
+  const structure = currentBlindStructure();
+
+  for (let index = 0; index < state.livePlayerCount; index += 1) {
+    const existingDraft = state.liveSeatDrafts[index] ?? {};
+    const nextDefault = defaultLiveSeat(index, state.livePlayerCount, structure);
+    const position = forcePositions || isDefaultPositionValue(index, existingDraft.position)
+      ? nextDefault.position
+      : existingDraft.position || nextDefault.position;
+    const blind = defaultBlindForPosition(position, structure);
+    const shouldUseDefaultBlind = forceBlinds || (
+      isDefaultPositionValue(index, existingDraft.position) &&
+      (!existingDraft.blindType || !existingDraft.blindAmount)
+    );
+
+    state.liveSeatDrafts[index] = {
+      ...existingDraft,
+      seat: existingDraft.seat || nextDefault.seat,
+      name: existingDraft.name || nextDefault.name,
+      position,
+      stack: existingDraft.stack || nextDefault.stack,
+      blindType: shouldUseDefaultBlind ? blind.type : existingDraft.blindType,
+      blindAmount: shouldUseDefaultBlind ? (blind.amount ? String(blind.amount) : "") : existingDraft.blindAmount
+    };
+  }
 }
 
 function liveSeatRows() {
@@ -1045,8 +1194,16 @@ function syncLiveSeatDraftsFromDom() {
       seat: row.querySelector("[data-live-seat]").value || String(index + 1),
       name: row.querySelector("[data-live-player-name]").value,
       position: row.querySelector("[data-live-position]").value,
-      stack: row.querySelector("[data-live-stack]").value
+      stack: row.querySelector("[data-live-stack]").value,
+      blindType: row.querySelector("[data-live-blind-type]").value,
+      blindAmount: row.querySelector("[data-live-blind-amount]").value
     };
+  }
+}
+
+function syncLiveShowdownDraftsFromDom() {
+  for (const input of elements.liveShowdownList.querySelectorAll("[data-showdown-player]")) {
+    state.liveShowdownDrafts[input.dataset.showdownPlayer] = input.value;
   }
 }
 
@@ -1056,14 +1213,15 @@ function renderLivePlayerCount() {
   }
 }
 
-function renderPositionOptions(selectedPosition) {
-  return livePositionOptions
-    .map((position) => `<option value="${escapeHtml(position)}" ${position === selectedPosition ? "selected" : ""}>${escapeHtml(position)}</option>`)
+function renderBlindOptions(selectedType) {
+  return liveBlindTypes
+    .map((blindType) => `<option value="${escapeHtml(blindType.value)}" ${blindType.value === selectedType ? "selected" : ""}>${escapeHtml(blindType.label)}</option>`)
     .join("");
 }
 
 function renderLiveSeatRows() {
   renderLivePlayerCount();
+  applyBlindStructure();
 
   const labelRow = `
     <div class="live-seat-row live-seat-labels">
@@ -1071,6 +1229,7 @@ function renderLiveSeatRows() {
       <span>Player</span>
       <span>Position</span>
       <span>Stack</span>
+      <span>Blind</span>
     </div>
   `;
   const rows = Array.from({ length: state.livePlayerCount }, (_, index) => {
@@ -1078,7 +1237,9 @@ function renderLiveSeatRows() {
     const normalizedDraft = {
       ...draft,
       position: draft.position || defaultPositionForSeat(index, state.livePlayerCount),
-      stack: draft.stack || "300"
+      stack: draft.stack || "300",
+      blindType: draft.blindType ?? "",
+      blindAmount: draft.blindAmount ?? ""
     };
     state.liveSeatDrafts[index] = normalizedDraft;
 
@@ -1086,10 +1247,14 @@ function renderLiveSeatRows() {
       <div class="live-seat-row" data-live-player-row="${index}">
         <input data-live-seat value="${escapeHtml(normalizedDraft.seat)}" inputmode="numeric" aria-label="Seat ${index + 1}">
         <input data-live-player-name value="${escapeHtml(normalizedDraft.name)}" autocomplete="off" aria-label="Seat ${index + 1} player">
-        <select data-live-position aria-label="Seat ${index + 1} position">
-          ${renderPositionOptions(normalizedDraft.position)}
-        </select>
+        <input data-live-position value="${escapeHtml(normalizedDraft.position)}" list="live-position-options" autocomplete="off" aria-label="Seat ${index + 1} position">
         <input data-live-stack value="${escapeHtml(normalizedDraft.stack)}" inputmode="decimal" aria-label="Seat ${index + 1} stack">
+        <div class="blind-cell">
+          <select data-live-blind-type aria-label="Seat ${index + 1} blind type">
+            ${renderBlindOptions(normalizedDraft.blindType)}
+          </select>
+          <input data-live-blind-amount value="${escapeHtml(normalizedDraft.blindAmount)}" inputmode="decimal" aria-label="Seat ${index + 1} blind amount">
+        </div>
       </div>
     `;
   }).join("");
@@ -1117,6 +1282,70 @@ function livePlayerNames() {
   return [...names];
 }
 
+function liveForcedBets() {
+  return liveSeatRows()
+    .map((row) => {
+      const player = row.querySelector("[data-live-player-name]").value.trim();
+      const type = row.querySelector("[data-live-blind-type]").value;
+      const amount = numericInput(row.querySelector("[data-live-blind-amount]").value, 0);
+
+      return {
+        player,
+        type,
+        amount,
+        street: "hole-cards"
+      };
+    })
+    .filter((forcedBet) => forcedBet.player && forcedBet.type && forcedBet.amount > 0);
+}
+
+function revealedHandsFromLiveForm() {
+  syncLiveShowdownDraftsFromDom();
+
+  return Object.fromEntries(
+    Object.entries(state.liveShowdownDrafts)
+      .map(([player, cards]) => [player, String(cards ?? "").trim()])
+      .filter(([player, cards]) => player && cards)
+  );
+}
+
+function liveStreetContribution(player, street = currentLiveStreet()) {
+  const forcedContribution = street === "hole-cards"
+    ? liveForcedBets()
+      .filter((forcedBet) => forcedBet.player === player)
+      .reduce((sum, forcedBet) => sum + (Number(forcedBet.amount) || 0), 0)
+    : 0;
+  const actionContribution = state.liveActions
+    .filter((action) => action.street === street && action.player === player)
+    .reduce((sum, action) => sum + (Number(action.amount) || 0), 0);
+
+  return forcedContribution + actionContribution;
+}
+
+function liveCallAmount(player, street = currentLiveStreet()) {
+  const players = livePlayerNames();
+  const largestContribution = Math.max(0, ...players.map((name) => liveStreetContribution(name, street)));
+  return Math.max(0, largestContribution - liveStreetContribution(player, street));
+}
+
+function livePotState() {
+  const player = elements.liveActionPlayer.value;
+  const pot = trackedPot({
+    actions: state.liveActions,
+    forcedBets: liveForcedBets()
+  });
+
+  return {
+    pot,
+    callAmount: player ? liveCallAmount(player) : 0,
+    forcedBets: liveForcedBets()
+  };
+}
+
+function forcedBetLabel(forcedBet) {
+  return `${escapeHtml(forcedBet.player)} ${escapeHtml(blindTypeLabels[forcedBet.type] ?? forcedBet.type)} ${formatCurrency(forcedBet.amount)}`;
+}
+
 function renderLivePlayerOptions() {
   const names = livePlayerNames();
   const previousActionPlayer = elements.liveActionPlayer.value;
@@ -1130,6 +1359,73 @@ function renderLivePlayerOptions() {
     ...names.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
   ].join("");
   elements.liveWinner.value = names.includes(previousWinner) ? previousWinner : "";
+}
+
+function renderLiveShowdownRows() {
+  const hero = elements.liveHero.value.trim() || "Hero";
+  const players = livePlayers().filter((player) => player.name !== hero);
+
+  if (players.length === 0) {
+    elements.liveShowdownList.innerHTML = '<div class="empty compact">No opponent seats yet.</div>';
+    return;
+  }
+
+  elements.liveShowdownList.innerHTML = players
+    .map((player) => {
+      const value = state.liveShowdownDrafts[player.name] ?? "";
+      const cards = String(value).trim().split(/[\s,]+/).filter(Boolean).slice(0, 2);
+
+      return `
+        <div class="showdown-row">
+          <span>
+            <strong>${escapeHtml(player.name)}</strong>
+            <small>${escapeHtml(player.position ?? `Seat ${player.seat}`)}</small>
+          </span>
+          <input data-showdown-player="${escapeHtml(player.name)}" value="${escapeHtml(value)}" autocomplete="off" placeholder="Qs Qd" aria-label="${escapeHtml(player.name)} showdown cards">
+          <div class="mini-cards">${cards.length ? cards.map((card) => renderCard(card, { mini: true })).join("") : renderCard("??", { mini: true }) + renderCard("??", { mini: true })}</div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderActionShortcuts() {
+  const structure = currentBlindStructure();
+  const selectedPlayer = elements.liveActionPlayer.value;
+  const street = currentLiveStreet();
+  const { pot, callAmount } = livePotState();
+  const bettingBase = street === "hole-cards"
+    ? Math.max(structure.straddle || 0, structure.bigBlind || 0, 1)
+    : Math.max(pot, structure.bigBlind || 1);
+  const shortcutRows = [
+    ...quickActionPresets.map((preset) => ({
+      ...preset,
+      amount: preset.type === "calls" ? callAmount : null,
+      label: preset.type === "calls" && callAmount > 0 ? `Call ${formatCurrency(callAmount)}` : preset.label
+    })),
+    {
+      type: street === "hole-cards" ? "raises" : "bets",
+      amount: Math.round(((street === "hole-cards" ? bettingBase * 3 : bettingBase * 0.5) + Number.EPSILON) * 100) / 100,
+      label: street === "hole-cards" ? `Open ${formatCurrency(bettingBase * 3)}` : `1/2 pot ${formatCurrency(bettingBase * 0.5)}`
+    },
+    {
+      type: street === "hole-cards" ? "raises" : "bets",
+      amount: Math.round(((street === "hole-cards" ? bettingBase * 4 : bettingBase) + Number.EPSILON) * 100) / 100,
+      label: street === "hole-cards" ? `Raise ${formatCurrency(bettingBase * 4)}` : `Pot ${formatCurrency(bettingBase)}`
+    }
+  ];
+
+  elements.liveActionShortcuts.innerHTML = shortcutRows
+    .map((shortcut) => {
+      const disabled = !selectedPlayer || (shortcut.type === "calls" && Number(shortcut.amount) <= 0);
+
+      return `
+      <button type="button" data-action-shortcut-type="${escapeHtml(shortcut.type)}" data-action-shortcut-amount="${shortcut.amount ?? ""}" ${disabled ? "disabled" : ""}>
+        ${escapeHtml(shortcut.label)}
+      </button>
+    `;
+    })
+    .join("");
 }
 
 function renderLiveActions() {
@@ -1190,8 +1486,8 @@ function renderActionTimeline(actions, { removable = false, activeIndex = -1 } =
 function seatStyle(index, total) {
   const angle = -90 + (360 / Math.max(1, total)) * index;
   const radians = (angle * Math.PI) / 180;
-  const x = 50 + Math.cos(radians) * 44;
-  const y = 50 + Math.sin(radians) * 40;
+  const x = 50 + Math.cos(radians) * 38;
+  const y = 50 + Math.sin(radians) * 31;
 
   return `--seat-left: ${x.toFixed(2)}%; --seat-top: ${y.toFixed(2)}%;`;
 }
@@ -1201,7 +1497,8 @@ function renderTableSeats(players, {
   heroCards = [],
   activePlayer = "",
   foldedPlayers = new Set(),
-  revealedHands = {}
+  revealedHands = {},
+  forcedBets = []
 } = {}) {
   return players
     .map((player, index) => {
@@ -1209,6 +1506,7 @@ function renderTableSeats(players, {
       const isActive = player.name === activePlayer;
       const isFolded = foldedPlayers.has(player.name);
       const cards = revealedHands[player.name] ?? (isHero ? heroCards : ["??", "??"]);
+      const forcedBet = forcedBets.find((item) => item.player === player.name);
       const classes = [
         "table-seat",
         isHero ? "hero" : "",
@@ -1221,6 +1519,7 @@ function renderTableSeats(players, {
           <span>${escapeHtml(player.position ?? `Seat ${player.seat}`)}</span>
           <strong>${escapeHtml(player.name)}</strong>
           <small>${formatNumber(player.stack, 0)} stack</small>
+          ${forcedBet ? `<small class="seat-forced-bet">${escapeHtml(blindTypeLabels[forcedBet.type] ?? forcedBet.type)} ${formatCurrency(forcedBet.amount)}</small>` : ""}
           <div class="mini-cards">${cards.map((card) => renderCard(card, { mini: true })).join("")}</div>
         </div>
       `;
@@ -1245,23 +1544,31 @@ function renderLivePreview() {
   const heroCards = String(form.get("heroCards") ?? "").trim().split(/[\s,]+/).filter(Boolean);
   const board = String(form.get("boardCards") ?? "").trim().split(/[\s,]+/).filter(Boolean);
   const players = livePlayers();
+  const forcedBets = liveForcedBets();
+  const revealedHands = revealedHandsFromLiveForm();
   const lastAction = state.liveActions.at(-1);
   const foldedPlayers = new Set(state.liveActions.filter((action) => action.type === "folds").map((action) => action.player));
+  const potState = livePotState();
   const trackedPot = trackedPotAt({
-    actions: state.liveActions
+    actions: state.liveActions,
+    forcedBets
   }, state.liveActions.length + 1);
   const visibleBoard = board.length ? renderCards(board) : renderCards(["??", "??", "??"]);
+  const blindLine = forcedBets.length ? forcedBets.map(forcedBetLabel).join(" / ") : "No forced bets";
 
   renderStreetTabs();
+  renderActionShortcuts();
 
   elements.livePreview.innerHTML = `
     <div class="live-table-preview">
-      <div class="live-table-felt">
+      <div class="live-table-felt table-size-${players.length}">
         ${renderTableSeats(players, {
           hero,
           heroCards,
           activePlayer: lastAction?.player ?? "",
-          foldedPlayers
+          foldedPlayers,
+          revealedHands,
+          forcedBets
         })}
         <div class="board-zone live-board-zone">
           <span class="subtle">${escapeHtml(sessionLabel(session))}</span>
@@ -1273,12 +1580,16 @@ function renderLivePreview() {
     </div>
     <div class="live-preview-stats">
       <article class="preview-card">
-        <span class="subtle">Table</span>
-        <strong>${escapeHtml(form.get("tableName") || "Live table")}</strong>
+        <span class="subtle">Pot</span>
+        <strong>${formatCurrency(trackedPot)}</strong>
       </article>
       <article class="preview-card">
-        <span class="subtle">Stakes</span>
-        <strong>${escapeHtml(form.get("stakes") || "Not set")}</strong>
+        <span class="subtle">To call</span>
+        <strong>${formatCurrency(potState.callAmount)}</strong>
+      </article>
+      <article class="preview-card wide">
+        <span class="subtle">Blinds</span>
+        <strong>${escapeHtml(blindLine)}</strong>
       </article>
       <article class="preview-card">
         <span class="subtle">Seats</span>
@@ -1967,7 +2278,8 @@ function renderHands() {
 }
 
 function replaySteps(hand) {
-  return [
+  const hasShowdownCards = Object.keys(hand.holeCards ?? {}).some((player) => player !== hand.hero);
+  const steps = [
     {
       street: "hole-cards",
       action: null
@@ -1977,6 +2289,16 @@ function replaySteps(hand) {
       action
     }))
   ];
+
+  if (hasShowdownCards && !steps.some((step) => step.street === "show-down")) {
+    steps.push({
+      street: "show-down",
+      action: null,
+      showdown: true
+    });
+  }
+
+  return steps;
 }
 
 function boardForStreet(hand, street) {
@@ -2007,9 +2329,12 @@ function foldedPlayersAt(hand, stepIndex) {
 }
 
 function trackedPotAt(hand, stepIndex) {
-  return hand.actions
+  const forcedPot = (hand.forcedBets ?? []).reduce((sum, forcedBet) => sum + (Number(forcedBet.amount) || 0), 0);
+  const actionPot = (hand.actions ?? [])
     .slice(0, Math.max(0, stepIndex))
     .reduce((sum, action) => sum + (Number(action.amount) || 0), 0);
+
+  return forcedPot + actionPot;
 }
 
 function renderReplayer(hand, steps) {
@@ -2019,19 +2344,25 @@ function renderReplayer(hand, steps) {
   const foldedPlayers = foldedPlayersAt(hand, state.replayStep);
   const trackedPot = trackedPotAt(hand, state.replayStep);
   const heroCards = hand.hero ? hand.holeCards[hand.hero] : [];
+  const revealShowdown = step.showdown || step.street === "show-down" || state.replayStep === steps.length - 1;
+  const revealedHands = revealShowdown ? hand.holeCards ?? {} : {};
   const actionText = step.action
     ? formatAction(step.action)
+    : step.showdown
+      ? "Showdown cards revealed"
     : `Hand #${escapeHtml(hand.handNumber)} ready`;
   const seats = renderTableSeats(hand.players, {
     hero: hand.hero,
     heroCards,
     activePlayer,
-    foldedPlayers
+    foldedPlayers,
+    revealedHands,
+    forcedBets: hand.forcedBets ?? []
   });
 
   return `
     <section class="replayer">
-      <div class="replay-table">
+      <div class="replay-table table-size-${hand.players.length}">
         ${seats}
         <div class="board-zone">
           <span class="subtle">${escapeHtml(streetLabels[step.street] ?? step.street)}</span>
@@ -2371,6 +2702,8 @@ function render() {
   renderHandFilterOptions();
   renderLiveSeatRows();
   renderLivePlayerOptions();
+  renderLiveShowdownRows();
+  renderActionShortcuts();
   renderLiveActions();
   renderLivePreview();
   renderPlayerStats();
@@ -2592,37 +2925,29 @@ elements.livePlayerCount.addEventListener("click", (event) => {
   }
 
   syncLiveSeatDraftsFromDom();
-  const previousCount = state.livePlayerCount;
+  syncLiveShowdownDraftsFromDom();
   state.livePlayerCount = Number(target.dataset.livePlayerCount);
-  for (let index = 0; index < state.livePlayerCount; index += 1) {
-    const existingDraft = state.liveSeatDrafts[index] ?? {};
-    const previousDefaultPosition = defaultPositionForSeat(index, previousCount);
-    const nextDefault = defaultLiveSeat(index, state.livePlayerCount);
-
-    state.liveSeatDrafts[index] = {
-      ...existingDraft,
-      seat: existingDraft.seat || nextDefault.seat,
-      name: existingDraft.name || nextDefault.name,
-      position: !existingDraft.position || existingDraft.position === previousDefaultPosition
-        ? nextDefault.position
-        : existingDraft.position,
-      stack: existingDraft.stack || nextDefault.stack
-    };
-  }
+  applyBlindStructure();
   renderLiveSeatRows();
   renderLivePlayerOptions();
+  renderLiveShowdownRows();
+  renderActionShortcuts();
   renderLivePreview();
 });
 
 elements.liveSeatGrid.addEventListener("input", () => {
   syncLiveSeatDraftsFromDom();
   renderLivePlayerOptions();
+  renderLiveShowdownRows();
+  renderActionShortcuts();
   renderLivePreview();
 });
 
 elements.liveSeatGrid.addEventListener("change", () => {
   syncLiveSeatDraftsFromDom();
   renderLivePlayerOptions();
+  renderLiveShowdownRows();
+  renderActionShortcuts();
   renderLivePreview();
 });
 
@@ -2634,15 +2959,87 @@ elements.liveStreetTabs.addEventListener("click", (event) => {
 
   elements.liveActionStreet.value = target.dataset.liveStreet;
   renderStreetTabs();
+  renderActionShortcuts();
+  renderLivePreview();
 });
 
-elements.liveForm.addEventListener("input", () => {
+elements.liveBlindPresets.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-blind-preset]");
+  if (!target) {
+    return;
+  }
+
   syncLiveSeatDraftsFromDom();
+  syncLiveShowdownDraftsFromDom();
+  elements.liveStakes.value = target.dataset.blindPreset;
+  applyBlindStructure({
+    forcePositions: true,
+    forceBlinds: true
+  });
+  renderLiveSeatRows();
   renderLivePlayerOptions();
+  renderLiveShowdownRows();
+  renderActionShortcuts();
+  renderLivePreview();
+});
+
+elements.liveForm.addEventListener("input", (event) => {
+  if (event.target.closest("#live-seat-grid")) {
+    return;
+  }
+
+  if (event.target.closest("#live-showdown-list")) {
+    syncLiveShowdownDraftsFromDom();
+    renderLivePreview();
+    return;
+  }
+
+  syncLiveSeatDraftsFromDom();
+  syncLiveShowdownDraftsFromDom();
+  if (event.target === elements.liveStakes) {
+    applyBlindStructure({
+      forceBlinds: true
+    });
+    renderLiveSeatRows();
+  }
+  renderLivePlayerOptions();
+  renderLiveShowdownRows();
+  renderActionShortcuts();
   renderLivePreview();
 });
 
 elements.liveSession.addEventListener("change", () => {
+  renderLivePreview();
+});
+
+for (const control of [elements.liveActionPlayer, elements.liveActionType, elements.liveActionAmount]) {
+  control.addEventListener("change", () => {
+    renderActionShortcuts();
+    renderLivePreview();
+  });
+}
+
+elements.liveActionShortcuts.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-action-shortcut-type]");
+  if (!target) {
+    return;
+  }
+
+  const player = elements.liveActionPlayer.value;
+  if (!player) {
+    showToast("Add a player before adding an action.");
+    return;
+  }
+
+  state.liveActions.push({
+    street: currentLiveStreet(),
+    player,
+    type: target.dataset.actionShortcutType,
+    amount: target.dataset.actionShortcutAmount || null
+  });
+  elements.liveActionAmount.value = "";
+  renderLiveActions();
+  renderActionShortcuts();
   renderLivePreview();
 });
 
@@ -2655,13 +3052,14 @@ elements.liveAddAction.addEventListener("click", () => {
   }
 
   state.liveActions.push({
-    street: elements.liveActionStreet.value,
+    street: currentLiveStreet(),
     player,
     type: elements.liveActionType.value,
     amount: elements.liveActionAmount.value.trim() || null
   });
   elements.liveActionAmount.value = "";
   renderLiveActions();
+  renderActionShortcuts();
   renderLivePreview();
 });
 
@@ -2673,6 +3071,7 @@ elements.liveActionList.addEventListener("click", (event) => {
 
   state.liveActions.splice(Number(target.dataset.deleteLiveAction), 1);
   renderLiveActions();
+  renderActionShortcuts();
   renderLivePreview();
 });
 
@@ -3226,6 +3625,8 @@ elements.bankrollCancel.addEventListener("click", () => {
 elements.liveForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
+  syncLiveSeatDraftsFromDom();
+  syncLiveShowdownDraftsFromDom();
 
   try {
     const payload = await api("/api/live-hands", {
@@ -3242,12 +3643,15 @@ elements.liveForm.addEventListener("submit", async (event) => {
         winner: form.get("winner"),
         wonAmount: form.get("wonAmount"),
         players: livePlayers(),
+        forcedBets: liveForcedBets(),
+        revealedHands: revealedHandsFromLiveForm(),
         actions: state.liveActions,
         notes: form.get("notes")
       }
     });
 
     state.liveActions = [];
+    state.liveShowdownDrafts = {};
     await refresh({ quiet: true });
     if (payload.hand?.id) {
       state.selectedHandId = payload.hand.id;

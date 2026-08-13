@@ -4,9 +4,14 @@ function round(value, places = 2) {
 }
 
 function committedByPlayer(hand, player) {
-  return (hand.actions ?? [])
+  const actionCommitment = (hand.actions ?? [])
     .filter((action) => action.player === player)
     .reduce((sum, action) => sum + (Number(action.amount) || 0), 0);
+  const forcedCommitment = (hand.forcedBets ?? [])
+    .filter((forcedBet) => forcedBet.player === player)
+    .reduce((sum, forcedBet) => sum + (Number(forcedBet.amount) || 0), 0);
+
+  return actionCommitment + forcedCommitment;
 }
 
 function normalizedTag(value) {
@@ -31,7 +36,10 @@ export function estimateHeroResult(hand) {
 }
 
 export function trackedPot(hand) {
-  return round((hand.actions ?? []).reduce((sum, action) => sum + (Number(action.amount) || 0), 0));
+  const actionPot = (hand.actions ?? []).reduce((sum, action) => sum + (Number(action.amount) || 0), 0);
+  const forcedPot = (hand.forcedBets ?? []).reduce((sum, forcedBet) => sum + (Number(forcedBet.amount) || 0), 0);
+
+  return round(actionPot + forcedPot);
 }
 
 export function normalizeTags(tags = []) {

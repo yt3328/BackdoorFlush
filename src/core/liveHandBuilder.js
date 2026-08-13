@@ -40,6 +40,10 @@ function positiveNumber(value, fallback = 0) {
   return number === null ? fallback : Math.max(0, number);
 }
 
+function cleanPosition(value) {
+  return cleanText(value).toUpperCase();
+}
+
 function normalizeCard(value, label) {
   const text = cleanText(value);
   const match = text.match(/^(10|[2-9TJQKA])([cdhs])$/i);
@@ -66,6 +70,23 @@ function cardsFromInput(value, { label, max, required = false } = {}) {
   }
 
   return rawCards.map((card) => normalizeCard(card, label));
+}
+
+function optionalHoleCards(value, label) {
+  const cards = cardsFromInput(value, {
+    label,
+    max: 2
+  });
+
+  if (cards.length === 0) {
+    return [];
+  }
+
+  if (cards.length !== 2) {
+    throw new Error(`${label} expects exactly 2 cards when provided.`);
+  }
+
+  return cards;
 }
 
 function assertUniqueCards(cards) {
@@ -114,18 +135,18 @@ function upsertPlayer(players, name, defaults = {}) {
     seat: nextSeat(players),
     name: playerName,
     stack: positiveNumber(defaults.stack),
-    position: cleanText(defaults.position) || null
+    position: cleanPosition(defaults.position) || null
   });
 }
 
-function normalizePlayers(rawPlayers, hero, actions, winnings) {
+function normalizePlayers(rawPlayers, hero, actions, winnings, holeCards, forcedBets) {
   const players = Array.isArray(rawPlayers)
     ? rawPlayers
       .map((player, index) => ({
         seat: Math.max(1, Math.trunc(positiveNumber(player.seat, index + 1))),
         name: cleanText(player.name),
         stack: positiveNumber(player.stack),
-        position: cleanText(player.position) || null
+        position: cleanPosition(player.position) || null
       }))
       .filter((player) => player.name)
     : [];
@@ -140,6 +161,14 @@ function normalizePlayers(rawPlayers, hero, actions, winnings) {
 
   for (const winner of Object.keys(winnings)) {
     upsertPlayer(players, winner);
+  }
+
+  for (const player of Object.keys(holeCards)) {
+    upsertPlayer(players, player);
+  }
+
+  for (const forcedBet of forcedBets) {
+    upsertPlayer(players, forcedBet.player);
   }
 
   if (players.length < 2) {
@@ -186,6 +215,72 @@ function normalizeWinnings(payload) {
   return winnings;
 }
 
+function normalizeHoleCards(payload, hero, heroCards) {
+  const holeCards = {
+    [hero]: heroCards
+  };
+
+  const rawHoleCards = payload.holeCards && !Array.isArray(payload.holeCards) && typeof payload.holeCards === "object"
+    ? payload.holeCards
+    : {};
+  const rawRevealedHands = payload.revealedHands && typeof payload.revealedHands === "object"
+    ? payload.revealedHands
+    : {};
+
+  for (const [player, cards] of Object.entries({
+    ...rawHoleCards,
+    ...rawRevealedHands
+  })) {
+    const playerName = cleanText(player);
+    if (!playerName || playerName === hero) {
+      continue;
+    }
+
+    const normalizedCards = optionalHoleCards(cards, `${playerName} hole cards`);
+    if (normalizedCards.length === 2) {
+      holeCards[playerName] = normalizedCards;
+    }
+  }
+
+  if (Array.isArray(payload.showdownCards)) {
+    for (const entry of payload.showdownCards) {
+      const playerName = cleanText(entry.player ?? entry.name);
+      if (!playerName || playerName === hero) {
+        continue;
+      }
+
+      const normalizedCards = optionalHoleCards(entry.cards ?? entry.holeCards, `${playerName} showdown cards`);
+      if (normalizedCards.length === 2) {
+        holeCards[playerName] = normalizedCards;
+      }
+    }
+  }
+
+  return holeCards;
+}
+
+function normalizeForcedBetType(value) {
+  return cleanText(value)
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function normalizeForcedBets(rawForcedBets) {
+  if (!Array.isArray(rawForcedBets)) {
+    return [];
+  }
+
+  return rawForcedBets
+    .map((forcedBet) => ({
+      player: cleanText(forcedBet.player),
+      type: normalizeForcedBetType(forcedBet.type || forcedBet.kind || "blind"),
+      amount: positiveNumber(forcedBet.amount),
+      street: normalizeStreet(forcedBet.street || "hole-cards")
+    }))
+    .filter((forcedBet) => forcedBet.player && forcedBet.amount > 0);
+}
+
 function generatedHandNumber(defaults) {
   const now = defaults.now ? new Date(defaults.now) : new Date();
   const stamp = Number.isNaN(now.getTime())
@@ -210,11 +305,14 @@ export function buildLiveHand(payload = {}, defaults = {}) {
     label: "boardCards",
     max: 5
   });
-  assertUniqueCards([...heroCards, ...board]);
 
   const actions = normalizeActions(payload.actions ?? []);
   const winnings = normalizeWinnings(payload);
-  const players = normalizePlayers(payload.players, hero, actions, winnings);
+  const forcedBets = normalizeForcedBets(payload.forcedBets);
+  const holeCards = normalizeHoleCards(payload, hero, heroCards);
+  assertUniqueCards([...Object.values(holeCards).flat(), ...board]);
+
+  const players = normalizePlayers(payload.players, hero, actions, winnings, holeCards, forcedBets);
   const explicitButtonSeat = nullableNumber(payload.buttonSeat);
   const buttonSeat = explicitButtonSeat ?? players.find((player) => player.position === "BTN")?.seat ?? null;
 
@@ -224,13 +322,12 @@ export function buildLiveHand(payload = {}, defaults = {}) {
     buttonSeat,
     players,
     hero,
-    holeCards: {
-      [hero]: heroCards
-    },
+    holeCards,
     board,
     actions,
+    forcedBets,
     winnings,
-    rawLineCount: actions.length,
+    rawLineCount: actions.length + forcedBets.length,
     source: "live-entry",
     stakes: cleanText(payload.stakes),
     notes: cleanText(payload.notes)

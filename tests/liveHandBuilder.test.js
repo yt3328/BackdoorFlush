@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { buildDecisionBreakdown } from "../src/core/decisionReview.js";
+import { estimateHeroResult, trackedPot } from "../src/core/handReview.js";
 import { buildLiveHand } from "../src/core/liveHandBuilder.js";
 
 test("builds a live hand in the parser hand shape", () => {
@@ -104,6 +106,138 @@ test("normalizes ten-card notation in live hands", () => {
 
   assert.deepEqual(hand.holeCards.Hero, ["Th", "Td"]);
   assert.deepEqual(hand.board, ["Ts", "2c", "3d"]);
+});
+
+test("stores forced bets and revealed showdown cards for live hands", () => {
+  const hand = buildLiveHand({
+    hero: "Hero",
+    heroCards: "Ah Kd",
+    boardCards: "Qs 8s 2c 4h 9d",
+    winner: "Villain",
+    wonAmount: "120",
+    players: [
+      {
+        seat: 1,
+        name: "Hero",
+        position: "BTN",
+        stack: "500"
+      },
+      {
+        seat: 2,
+        name: "SB",
+        position: "SB",
+        stack: "400"
+      },
+      {
+        seat: 3,
+        name: "BB",
+        position: "BB",
+        stack: "600"
+      },
+      {
+        seat: 4,
+        name: "Villain",
+        position: "STR",
+        stack: "800"
+      }
+    ],
+    forcedBets: [
+      {
+        player: "SB",
+        type: "small-blind",
+        amount: "$2"
+      },
+      {
+        player: "BB",
+        type: "big-blind",
+        amount: "$5"
+      },
+      {
+        player: "Villain",
+        type: "straddle",
+        amount: "$10"
+      }
+    ],
+    revealedHands: {
+      Villain: "Qh Qd"
+    },
+    actions: [
+      {
+        street: "preflop",
+        player: "Hero",
+        type: "calls",
+        amount: "10"
+      }
+    ]
+  });
+
+  assert.deepEqual(hand.holeCards.Villain, ["Qh", "Qd"]);
+  assert.equal(hand.players.find((player) => player.name === "Villain").position, "STR");
+  assert.equal(hand.forcedBets.length, 3);
+  assert.equal(trackedPot(hand), 27);
+  assert.equal(estimateHeroResult(hand), -10);
+});
+
+test("decision review pot includes blinds and straddle before the first hero action", () => {
+  const hand = buildLiveHand({
+    hero: "Hero",
+    heroCards: "Ah Kd",
+    players: [
+      {
+        seat: 1,
+        name: "Hero",
+        position: "BTN",
+        stack: "500"
+      },
+      {
+        seat: 2,
+        name: "SB",
+        position: "SB",
+        stack: "400"
+      },
+      {
+        seat: 3,
+        name: "BB",
+        position: "BB",
+        stack: "600"
+      },
+      {
+        seat: 4,
+        name: "STR",
+        position: "STR",
+        stack: "800"
+      }
+    ],
+    forcedBets: [
+      {
+        player: "SB",
+        type: "small-blind",
+        amount: 2
+      },
+      {
+        player: "BB",
+        type: "big-blind",
+        amount: 5
+      },
+      {
+        player: "STR",
+        type: "straddle",
+        amount: 10
+      }
+    ],
+    actions: [
+      {
+        street: "preflop",
+        player: "Hero",
+        type: "raises",
+        amount: 30
+      }
+    ]
+  });
+  const report = buildDecisionBreakdown(hand);
+
+  assert.equal(report.decisions[0].potBefore, 17);
+  assert.equal(report.decisions[0].potAfter, 47);
 });
 
 test("rejects duplicate visible cards", () => {

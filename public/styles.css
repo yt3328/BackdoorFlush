@@ -398,6 +398,11 @@ button {
   grid-template-columns: minmax(320px, 0.9fr) minmax(360px, 1.1fr);
 }
 
+.live-workspace {
+  align-items: start;
+  grid-template-columns: minmax(480px, 0.92fr) minmax(560px, 1.08fr);
+}
+
 .session-tools {
   display: grid;
   align-content: start;
@@ -938,15 +943,25 @@ button.tag-chip.active,
   font-size: 0.92rem;
 }
 
+.table-setup-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(220px, 1.1fr);
+  gap: 12px;
+}
+
 .seat-count-control,
-.street-tabs {
+.street-tabs,
+.blind-presets,
+.action-shortcuts {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
 .seat-count-control button,
-.street-tabs button {
+.street-tabs button,
+.blind-presets button,
+.action-shortcuts button {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
@@ -959,15 +974,23 @@ button.tag-chip.active,
 .seat-count-control button.active,
 .street-tabs button.active,
 .seat-count-control button:hover,
-.street-tabs button:hover {
+.street-tabs button:hover,
+.blind-presets button:hover,
+.action-shortcuts button:hover {
   border-color: rgba(15, 107, 79, 0.38);
   background: #e5f3ed;
   color: var(--felt-dark);
 }
 
+.action-shortcuts button:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
 .live-seat-grid,
 .live-action-list,
-.live-preview {
+.live-preview,
+.showdown-list {
   display: grid;
   gap: 8px;
 }
@@ -981,7 +1004,7 @@ button.tag-chip.active,
 }
 
 .live-seat-row {
-  grid-template-columns: 56px minmax(130px, 1fr) minmax(96px, 0.5fr) minmax(96px, 0.5fr);
+  grid-template-columns: 56px minmax(130px, 1fr) minmax(96px, 0.5fr) minmax(96px, 0.5fr) minmax(150px, 0.75fr);
 }
 
 .live-seat-labels {
@@ -993,6 +1016,42 @@ button.tag-chip.active,
 
 .live-action-compose {
   grid-template-columns: minmax(150px, 1fr) minmax(128px, 0.75fr) minmax(110px, 0.55fr) auto;
+}
+
+.blind-cell {
+  display: grid;
+  grid-template-columns: minmax(76px, 0.8fr) minmax(66px, 0.7fr);
+  gap: 6px;
+}
+
+.showdown-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.8fr) minmax(120px, 0.8fr) minmax(80px, auto);
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 9px;
+}
+
+.showdown-row span,
+.showdown-row strong,
+.showdown-row small {
+  display: block;
+  min-width: 0;
+}
+
+.showdown-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.showdown-row small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
 }
 
 .action-timeline {
@@ -1093,6 +1152,7 @@ button.tag-chip.active,
 }
 
 .live-preview {
+  gap: 14px;
   padding: 16px;
 }
 
@@ -1103,7 +1163,9 @@ button.tag-chip.active,
 .live-table-felt,
 .replay-table {
   position: relative;
-  min-height: 430px;
+  width: 100%;
+  min-height: clamp(500px, 42vw, 640px);
+  aspect-ratio: 1.55 / 1;
   border: 10px solid #70472f;
   border-radius: 999px;
   background:
@@ -1116,7 +1178,7 @@ button.tag-chip.active,
   position: absolute;
   left: var(--seat-left);
   top: var(--seat-top);
-  width: 138px;
+  width: clamp(116px, 16%, 148px);
   min-height: 104px;
   display: grid;
   gap: 4px;
@@ -1127,6 +1189,14 @@ button.tag-chip.active,
   padding: 9px;
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.22);
   transform: translate(-50%, -50%);
+}
+
+.table-size-8 .table-seat,
+.table-size-9 .table-seat,
+.table-size-10 .table-seat {
+  width: clamp(108px, 14%, 132px);
+  min-height: 96px;
+  padding: 8px;
 }
 
 .table-seat.hero {
@@ -1150,6 +1220,10 @@ button.tag-chip.active,
   font-weight: 800;
 }
 
+.table-seat .seat-forced-bet {
+  color: var(--felt-dark);
+}
+
 .table-seat strong {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1162,8 +1236,12 @@ button.tag-chip.active,
 
 .live-preview-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   gap: 8px;
+}
+
+.preview-card.wide {
+  grid-column: span 2;
 }
 
 .preview-card {
@@ -1858,6 +1936,7 @@ button.tag-chip.active,
   .live-workspace,
   .sessions-workspace,
   .hand-filters,
+  .table-setup-grid,
   .live-action-compose,
   .live-preview-stats {
     grid-template-columns: 1fr;
@@ -1925,12 +2004,18 @@ button.tag-chip.active,
   .decision-metrics,
   .live-action-compose,
   .live-action-row,
-  .live-preview-stats {
+  .live-preview-stats,
+  .showdown-row {
     grid-template-columns: 1fr;
   }
 
   .live-seat-row {
     grid-template-columns: 52px minmax(110px, 1fr);
+  }
+
+  .blind-cell,
+  .preview-card.wide {
+    grid-column: 1 / -1;
   }
 
   .live-seat-labels {
