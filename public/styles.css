@@ -323,6 +323,43 @@ button {
   margin-bottom: 16px;
 }
 
+.bankroll-filter-panel {
+  margin-bottom: 16px;
+}
+
+.filter-head {
+  min-height: 54px;
+}
+
+.filter-head .button {
+  min-height: 36px;
+  padding-block: 7px;
+}
+
+.bankroll-filters {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(132px, 1fr));
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.bankroll-filters label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.filter-summary {
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+  min-height: 45px;
+  padding: 12px 16px;
+}
+
 .metric,
 .panel {
   background: var(--panel);
@@ -979,19 +1016,34 @@ button.tag-chip.active,
 }
 
 .bankroll-chart {
-  padding: 16px;
+  padding: 14px 16px 16px;
 }
 
 .bankroll-chart svg {
   display: block;
   width: 100%;
-  min-height: 260px;
+  min-height: 310px;
+}
+
+.chart-grid-line {
+  stroke: #e4e8e1;
+  stroke-width: 1;
+}
+
+.chart-axis-label {
+  fill: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.bankroll-area {
+  fill: rgba(15, 107, 79, 0.12);
 }
 
 .zero-line {
-  stroke: #ccd3cb;
+  stroke: #bfc8bf;
   stroke-width: 2;
-  stroke-dasharray: 6 6;
+  stroke-dasharray: 5 7;
 }
 
 .bankroll-line {
@@ -999,12 +1051,17 @@ button.tag-chip.active,
   stroke: var(--felt-dark);
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 5;
+  stroke-width: 3.5;
 }
 
 .bankroll-point {
   stroke: #fff;
-  stroke-width: 3;
+  stroke-width: 2;
+}
+
+.bankroll-hit-point {
+  fill: transparent;
+  stroke: transparent;
 }
 
 .bankroll-point.win {
@@ -1022,11 +1079,12 @@ button.tag-chip.active,
   gap: 10px;
   color: var(--muted);
   font-size: 0.82rem;
+  padding-top: 4px;
 }
 
 .chart-axis strong {
   color: var(--ink);
-  font-size: 1rem;
+  font-size: 1.05rem;
 }
 
 .chart-axis span:last-child {
@@ -1594,6 +1652,7 @@ button.tag-chip.active,
   }
 
   .metrics,
+  .bankroll-filters,
   .split,
   .hands-workspace,
   .live-workspace,
@@ -1649,6 +1708,10 @@ button.tag-chip.active,
 
   .metrics {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .bankroll-filters {
+    gap: 10px;
   }
 
   .seat-list,

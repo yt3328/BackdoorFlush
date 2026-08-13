@@ -85,6 +85,42 @@
             </article>
           </div>
 
+          <section class="panel bankroll-filter-panel" aria-labelledby="bankroll-filter-title">
+            <div class="panel-head filter-head">
+              <h3 id="bankroll-filter-title">Bankroll Filters</h3>
+              <button id="bankroll-reset-filters" class="button secondary" type="button">Reset</button>
+            </div>
+            <div class="bankroll-filters">
+              <label>
+                Start date
+                <input id="bankroll-start-date" data-bankroll-filter="startDate" type="date">
+              </label>
+              <label>
+                End date
+                <input id="bankroll-end-date" data-bankroll-filter="endDate" type="date">
+              </label>
+              <label>
+                Location
+                <select id="bankroll-location-filter" data-bankroll-filter="location" aria-label="Bankroll location filter">
+                  <option value="">All locations</option>
+                </select>
+              </label>
+              <label>
+                Game type
+                <select id="bankroll-game-filter" data-bankroll-filter="gameType" aria-label="Bankroll game type filter">
+                  <option value="">All games</option>
+                </select>
+              </label>
+              <label>
+                Stakes
+                <select id="bankroll-stakes-filter" data-bankroll-filter="stakes" aria-label="Bankroll stakes filter">
+                  <option value="">All stakes</option>
+                </select>
+              </label>
+            </div>
+            <div id="bankroll-filter-summary" class="filter-summary"></div>
+          </section>
+
           <div class="metrics bankroll-metrics">
             <article class="metric">
               <span class="metric-label">Profit</span>

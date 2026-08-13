@@ -52,6 +52,14 @@ const emptyTransactionSummary = {
   recentTransactions: []
 };
 
+const emptyBankrollFilters = {
+  startDate: "",
+  endDate: "",
+  location: "",
+  gameType: "",
+  stakes: ""
+};
+
 const state = {
   view: "overview",
   hands: [],
@@ -61,6 +69,7 @@ const state = {
   bankrollTransactions: [],
   bankrollTransactionSummary: emptyTransactionSummary,
   bankrollImportPreview: null,
+  bankrollFilters: { ...emptyBankrollFilters },
   players: [],
   leaks: [],
   reviewSpots: [],
@@ -111,6 +120,9 @@ const elements = {
   importChart: document.querySelector("#import-chart"),
   bankrollChart: document.querySelector("#bankroll-chart"),
   locationChart: document.querySelector("#location-chart"),
+  bankrollFilterControls: [...document.querySelectorAll("[data-bankroll-filter]")],
+  bankrollFilterSummary: document.querySelector("#bankroll-filter-summary"),
+  bankrollResetFilters: document.querySelector("#bankroll-reset-filters"),
   handList: document.querySelector("#hand-list"),
   handDetail: document.querySelector("#hand-detail"),
   bankrollForm: document.querySelector("#bankroll-form"),
@@ -220,6 +232,7 @@ function clearDashboardData() {
   state.bankrollTransactions = [];
   state.bankrollTransactionSummary = emptyTransactionSummary;
   state.bankrollImportPreview = null;
+  state.bankrollFilters = { ...emptyBankrollFilters };
   state.players = [];
   state.leaks = [];
   state.reviewSpots = [];
@@ -344,6 +357,260 @@ function formatDate(value) {
     month: "short",
     day: "numeric"
   });
+}
+
+function formatLongDate(value) {
+  if (!value) {
+    return "";
+  }
+
+  return new Date(`${value}T12:00:00`).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  });
+}
+
+function finiteNumber(value, fallback = 0) {
+  if (value === "" || value === null || value === undefined) {
+    return fallback;
+  }
+
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function roundNumber(value, places = 2) {
+  const factor = 10 ** places;
+  return Math.round((Number(value) + Number.EPSILON) * factor) / factor;
+}
+
+function parseBigBlind(stakes) {
+  const match = String(stakes ?? "").match(/\$?(\d+(?:\.\d+)?)\s*\/\s*\$?(\d+(?:\.\d+)?)/);
+  return match ? Number(match[2]) : null;
+}
+
+function bankrollSessionDate(session) {
+  return String(session.date ?? "").slice(0, 10);
+}
+
+function bankrollSessionProfit(session) {
+  return finiteNumber(session.profit);
+}
+
+function bankrollSessionHours(session) {
+  return Math.max(0, finiteNumber(session.hours));
+}
+
+function bankrollSessionBbWon(session) {
+  if (Number.isFinite(Number(session.bbWon))) {
+    return finiteNumber(session.bbWon);
+  }
+
+  const bigBlind = finiteNumber(session.bigBlind, parseBigBlind(session.stakes));
+  return bigBlind > 0 ? bankrollSessionProfit(session) / bigBlind : 0;
+}
+
+function bankrollSessionField(session, field) {
+  const value = String(session[field] ?? "").trim();
+  return value || "Unspecified";
+}
+
+function sortBankrollSessionsByDate(sessions) {
+  return [...sessions].sort((a, b) => {
+    const dateCompare = bankrollSessionDate(a).localeCompare(bankrollSessionDate(b));
+    return dateCompare === 0
+      ? String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? ""))
+      : dateCompare;
+  });
+}
+
+function summarizeBankrollGroup(sessions, field) {
+  const groups = new Map();
+
+  for (const session of sessions) {
+    const label = bankrollSessionField(session, field);
+    const current = groups.get(label) ?? {
+      label,
+      sessions: 0,
+      profit: 0,
+      hours: 0,
+      bbWon: 0
+    };
+
+    current.sessions += 1;
+    current.profit += bankrollSessionProfit(session);
+    current.hours += bankrollSessionHours(session);
+    current.bbWon += bankrollSessionBbWon(session);
+    groups.set(label, current);
+  }
+
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      profit: roundNumber(group.profit),
+      hours: roundNumber(group.hours),
+      bbWon: roundNumber(group.bbWon),
+      hourlyRate: group.hours > 0 ? roundNumber(group.profit / group.hours) : 0,
+      bbPerHour: group.hours > 0 ? roundNumber(group.bbWon / group.hours) : 0
+    }))
+    .sort((a, b) => b.profit - a.profit);
+}
+
+function summarizeBankrollSessions(sessions = []) {
+  const ordered = sortBankrollSessionsByDate(sessions);
+  let cumulativeProfit = 0;
+  let cumulativeBb = 0;
+  const points = ordered.map((session) => {
+    const profit = bankrollSessionProfit(session);
+    const bbWon = bankrollSessionBbWon(session);
+    cumulativeProfit += profit;
+    cumulativeBb += bbWon;
+
+    return {
+      sessionId: sessionId(session),
+      date: bankrollSessionDate(session),
+      label: `${bankrollSessionField(session, "location")} ${session.stakes ?? ""}`.trim(),
+      profit: roundNumber(profit),
+      bbWon: roundNumber(bbWon),
+      cumulativeProfit: roundNumber(cumulativeProfit),
+      cumulativeBb: roundNumber(cumulativeBb)
+    };
+  });
+  const totalHours = sessions.reduce((sum, session) => sum + bankrollSessionHours(session), 0);
+  const totalProfit = sessions.reduce((sum, session) => sum + bankrollSessionProfit(session), 0);
+  const totalBb = sessions.reduce((sum, session) => sum + bankrollSessionBbWon(session), 0);
+  const winningSessions = sessions.filter((session) => bankrollSessionProfit(session) > 0).length;
+
+  return {
+    sessionCount: sessions.length,
+    totalProfit: roundNumber(totalProfit),
+    totalHours: roundNumber(totalHours),
+    totalBb: roundNumber(totalBb),
+    averageProfit: sessions.length > 0 ? roundNumber(totalProfit / sessions.length) : 0,
+    hourlyRate: totalHours > 0 ? roundNumber(totalProfit / totalHours) : 0,
+    bbPerHour: totalHours > 0 ? roundNumber(totalBb / totalHours) : 0,
+    winRate: sessions.length > 0 ? roundNumber((winningSessions / sessions.length) * 100, 1) : 0,
+    points,
+    byLocation: summarizeBankrollGroup(sessions, "location"),
+    byGameType: summarizeBankrollGroup(sessions, "gameType"),
+    byStakes: summarizeBankrollGroup(sessions, "stakes"),
+    recentSessions: [...sessions]
+      .sort((a, b) => bankrollSessionDate(b).localeCompare(bankrollSessionDate(a)))
+      .slice(0, 8)
+  };
+}
+
+function bankrollFilterActive() {
+  return Object.values(state.bankrollFilters).some(Boolean);
+}
+
+function normalizedDateRange() {
+  const startDate = state.bankrollFilters.startDate;
+  const endDate = state.bankrollFilters.endDate;
+
+  if (startDate && endDate && startDate > endDate) {
+    return {
+      startDate: endDate,
+      endDate: startDate
+    };
+  }
+
+  return {
+    startDate,
+    endDate
+  };
+}
+
+function filteredBankrollSessions() {
+  const { startDate, endDate } = normalizedDateRange();
+
+  return state.bankrollSessions.filter((session) => {
+    const date = bankrollSessionDate(session);
+    if (startDate && date < startDate) {
+      return false;
+    }
+    if (endDate && date > endDate) {
+      return false;
+    }
+    if (state.bankrollFilters.location && bankrollSessionField(session, "location") !== state.bankrollFilters.location) {
+      return false;
+    }
+    if (state.bankrollFilters.gameType && bankrollSessionField(session, "gameType") !== state.bankrollFilters.gameType) {
+      return false;
+    }
+    if (state.bankrollFilters.stakes && bankrollSessionField(session, "stakes") !== state.bankrollFilters.stakes) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+function currentBankrollSummary() {
+  return bankrollFilterActive()
+    ? summarizeBankrollSessions(filteredBankrollSessions())
+    : state.bankrollSummary;
+}
+
+function uniqueBankrollValues(field) {
+  return [...new Set(state.bankrollSessions.map((session) => bankrollSessionField(session, field)))]
+    .sort((a, b) => a.localeCompare(b, undefined, {
+      numeric: true,
+      sensitivity: "base"
+    }));
+}
+
+function setBankrollSelectOptions(name, label, values) {
+  const control = elements.bankrollFilterControls.find((item) => item.dataset.bankrollFilter === name);
+  if (!control) {
+    return;
+  }
+
+  if (state.bankrollFilters[name] && !values.includes(state.bankrollFilters[name])) {
+    state.bankrollFilters[name] = "";
+  }
+
+  control.innerHTML = [
+    `<option value="">${escapeHtml(label)}</option>`,
+    ...values.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`)
+  ].join("");
+  control.value = state.bankrollFilters[name];
+}
+
+function renderBankrollFilters() {
+  setBankrollSelectOptions("location", "All locations", uniqueBankrollValues("location"));
+  setBankrollSelectOptions("gameType", "All games", uniqueBankrollValues("gameType"));
+  setBankrollSelectOptions("stakes", "All stakes", uniqueBankrollValues("stakes"));
+
+  for (const control of elements.bankrollFilterControls) {
+    if (control.tagName === "SELECT") {
+      continue;
+    }
+    control.value = state.bankrollFilters[control.dataset.bankrollFilter] ?? "";
+  }
+
+  const filteredSessions = filteredBankrollSessions();
+  const parts = [];
+  const { startDate, endDate } = normalizedDateRange();
+
+  if (startDate && endDate) {
+    parts.push(`${formatLongDate(startDate)} to ${formatLongDate(endDate)}`);
+  } else if (startDate) {
+    parts.push(`since ${formatLongDate(startDate)}`);
+  } else if (endDate) {
+    parts.push(`through ${formatLongDate(endDate)}`);
+  }
+
+  for (const name of ["location", "gameType", "stakes"]) {
+    if (state.bankrollFilters[name]) {
+      parts.push(state.bankrollFilters[name]);
+    }
+  }
+
+  elements.bankrollFilterSummary.textContent = parts.length
+    ? `${filteredSessions.length} of ${state.bankrollSessions.length} sessions shown / ${parts.join(" / ")}`
+    : `${state.bankrollSessions.length} sessions shown / no bankroll filters applied`;
 }
 
 function sessionId(session) {
@@ -472,43 +739,86 @@ function renderTags(tags, { interactive = false, activeTags = [] } = {}) {
 
 function renderSparkline(points) {
   if (!points.length) {
-    return '<div class="empty">No bankroll sessions yet.</div>';
+    return bankrollFilterActive()
+      ? '<div class="empty">No bankroll sessions match the current filters.</div>'
+      : '<div class="empty">No bankroll sessions yet.</div>';
   }
 
   const values = points.map((point) => point.cumulativeProfit);
-  const min = Math.min(0, ...values);
-  const max = Math.max(0, ...values);
+  const rawMin = Math.min(0, ...values);
+  const rawMax = Math.max(0, ...values);
+  const rawSpan = Math.max(1, rawMax - rawMin);
+  const min = rawMin - rawSpan * 0.08;
+  const max = rawMax + rawSpan * 0.08;
   const span = Math.max(1, max - min);
-  const width = 640;
-  const height = 240;
-  const padding = 28;
-  const plotWidth = width - padding * 2;
-  const plotHeight = height - padding * 2;
+  const width = 760;
+  const height = 320;
+  const padding = {
+    top: 26,
+    right: 30,
+    bottom: 36,
+    left: 78
+  };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const valueToY = (value) => padding.top + plotHeight - ((value - min) / span) * plotHeight;
   const coordinates = points.map((point, index) => {
-    const x = padding + (points.length === 1 ? plotWidth : (index / (points.length - 1)) * plotWidth);
-    const y = padding + plotHeight - ((point.cumulativeProfit - min) / span) * plotHeight;
+    const x = padding.left + (points.length === 1 ? plotWidth / 2 : (index / (points.length - 1)) * plotWidth);
+    const y = valueToY(point.cumulativeProfit);
     return {
       x,
       y,
       point
     };
   });
-  const zeroY = padding + plotHeight - ((0 - min) / span) * plotHeight;
-  const path = coordinates.map((entry) => `${entry.x},${entry.y}`).join(" ");
+  const zeroY = valueToY(0);
+  const linePath = coordinates.map((entry, index) => {
+    const prefix = index === 0 ? "M" : "L";
+    return `${prefix}${entry.x.toFixed(1)} ${entry.y.toFixed(1)}`;
+  }).join(" ");
+  const first = coordinates[0];
+  const last = coordinates.at(-1);
+  const areaPath = `${linePath} L${last.x.toFixed(1)} ${zeroY.toFixed(1)} L${first.x.toFixed(1)} ${zeroY.toFixed(1)} Z`;
+  const maxIndex = values.indexOf(rawMax);
+  const minIndex = values.indexOf(rawMin);
+  const markerStep = Math.max(1, Math.ceil(points.length / 18));
+  const visibleMarkerIndexes = new Set([0, points.length - 1, maxIndex, minIndex]);
+
+  for (let index = 0; index < points.length; index += markerStep) {
+    visibleMarkerIndexes.add(index);
+  }
+
+  const ticks = Array.from({ length: 5 }, (_, index) => max - (span / 4) * index);
 
   return `
     <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Bankroll curve">
-      <line class="zero-line" x1="${padding}" y1="${zeroY}" x2="${width - padding}" y2="${zeroY}"></line>
-      <polyline class="bankroll-line" points="${path}"></polyline>
+      ${ticks.map((value) => {
+        const y = valueToY(value);
+        return `
+          <line class="chart-grid-line" x1="${padding.left}" y1="${y.toFixed(1)}" x2="${width - padding.right}" y2="${y.toFixed(1)}"></line>
+          <text class="chart-axis-label" x="${padding.left - 12}" y="${(y + 4).toFixed(1)}" text-anchor="end">${formatCurrency(value, { compact: true })}</text>
+        `;
+      }).join("")}
+      <line class="zero-line" x1="${padding.left}" y1="${zeroY.toFixed(1)}" x2="${width - padding.right}" y2="${zeroY.toFixed(1)}"></line>
+      <path class="bankroll-area" d="${areaPath}"></path>
+      <path class="bankroll-line" d="${linePath}"></path>
       ${coordinates
-        .map(
-          ({ x, y, point }) => `
-            <circle class="bankroll-point ${point.profit >= 0 ? "win" : "loss"}" cx="${x}" cy="${y}" r="5">
-              <title>${escapeHtml(point.date)} ${formatCurrency(point.cumulativeProfit, { signed: true })}</title>
+        .map(({ x, y, point }, index) => {
+          const title = `${point.date} / ${point.label || "Session"} / ${formatCurrency(point.profit, { signed: true })} session / ${formatCurrency(point.cumulativeProfit, { signed: true })} running`;
+          return `
+            <circle class="bankroll-hit-point" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="8">
+              <title>${escapeHtml(title)}</title>
             </circle>
-          `
-        )
+            ${visibleMarkerIndexes.has(index)
+              ? `<circle class="bankroll-point ${point.profit >= 0 ? "win" : "loss"}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${points.length === 1 ? 5 : 3.8}">
+              <title>${escapeHtml(point.date)} ${formatCurrency(point.cumulativeProfit, { signed: true })}</title>
+            </circle>`
+              : ""}
+          `;
+        })
         .join("")}
+      <text class="chart-axis-label" x="${padding.left}" y="${height - 10}" text-anchor="start">${escapeHtml(formatDate(points[0].date))}</text>
+      <text class="chart-axis-label" x="${width - padding.right}" y="${height - 10}" text-anchor="end">${escapeHtml(formatDate(points.at(-1).date))}</text>
     </svg>
     <div class="chart-axis">
       <span>${escapeHtml(formatDate(points[0].date))}</span>
@@ -520,6 +830,7 @@ function renderSparkline(points) {
 
 function renderMetrics() {
   const handCount = state.hands.length;
+  const bankrollSummary = currentBankrollSummary();
   const avgVpip =
     state.players.length === 0
       ? 0
@@ -530,16 +841,16 @@ function renderMetrics() {
   elements.metrics.players.textContent = state.players.length;
   elements.metrics.vpip.textContent = `${avgVpip.toFixed(1)}%`;
   elements.metrics.leaks.textContent = state.reviewSpots.length;
-  elements.metrics.profit.textContent = formatCurrency(state.bankrollSummary.totalProfit, {
+  elements.metrics.profit.textContent = formatCurrency(bankrollSummary.totalProfit, {
     compact: true,
     signed: true
   });
-  elements.metrics.sessions.textContent = state.bankrollSummary.sessionCount;
-  elements.metrics.hourly.textContent = `${formatCurrency(state.bankrollSummary.hourlyRate, {
+  elements.metrics.sessions.textContent = bankrollSummary.sessionCount;
+  elements.metrics.hourly.textContent = `${formatCurrency(bankrollSummary.hourlyRate, {
     compact: true,
     signed: true
   })}/hr`;
-  elements.metrics.bbhr.textContent = formatNumber(state.bankrollSummary.bbPerHour, 1);
+  elements.metrics.bbhr.textContent = formatNumber(bankrollSummary.bbPerHour, 1);
 }
 
 function renderPlayerOptions() {
@@ -815,13 +1126,16 @@ function renderCharts() {
 }
 
 function renderBankrollCharts() {
-  elements.bankrollChart.innerHTML = renderSparkline(state.bankrollSummary.points ?? []);
+  const summary = currentBankrollSummary();
+  elements.bankrollChart.innerHTML = renderSparkline(summary.points ?? []);
 
-  const locations = state.bankrollSummary.byLocation ?? [];
+  const locations = summary.byLocation ?? [];
   const maxProfit = Math.max(1, ...locations.map((item) => Math.abs(item.profit)));
 
   if (locations.length === 0) {
-    elements.locationChart.innerHTML = '<div class="empty">Add sessions to compare locations.</div>';
+    elements.locationChart.innerHTML = bankrollFilterActive()
+      ? '<div class="empty">No locations match the current filters.</div>'
+      : '<div class="empty">Add sessions to compare locations.</div>';
     return;
   }
 
@@ -921,9 +1235,13 @@ function renderStudyPlan() {
 }
 
 function renderSessionSummary() {
-  const summary = state.bankrollSummary;
+  const summary = currentBankrollSummary();
   const transactionSummary = state.bankrollTransactionSummary;
   const bankrollBalance = summary.totalProfit + transactionSummary.totalAmount;
+  const secondaryLabel = bankrollFilterActive() ? "Avg/session" : "Bankroll balance";
+  const secondaryValue = bankrollFilterActive()
+    ? summary.averageProfit
+    : bankrollBalance;
 
   elements.sessionSummary.innerHTML = `
     <div class="session-kpis">
@@ -932,8 +1250,8 @@ function renderSessionSummary() {
         <strong>${formatCurrency(summary.totalProfit, { signed: true })}</strong>
       </div>
       <div>
-        <span class="subtle">Bankroll balance</span>
-        <strong>${formatCurrency(bankrollBalance, { signed: true })}</strong>
+        <span class="subtle">${secondaryLabel}</span>
+        <strong>${formatCurrency(secondaryValue, { signed: true })}</strong>
       </div>
       <div>
         <span class="subtle">Hours</span>
@@ -1125,11 +1443,15 @@ function fillBankrollForm(session) {
   elements.bankrollCancel.hidden = false;
 }
 
-function renderSessionDetail() {
-  const selectedSession = sessionById(state.selectedSessionId);
+function renderSessionDetail(visibleSessions = state.bankrollSessions) {
+  const selectedSession = visibleSessions.some((session) => sessionId(session) === state.selectedSessionId)
+    ? sessionById(state.selectedSessionId)
+    : null;
 
   if (!selectedSession) {
-    elements.sessionDetail.innerHTML = '<div class="empty">Select a session to see linked imports and hands.</div>';
+    elements.sessionDetail.innerHTML = bankrollFilterActive()
+      ? '<div class="empty">Select a matching session to see linked imports and hands.</div>'
+      : '<div class="empty">Select a session to see linked imports and hands.</div>';
     return;
   }
 
@@ -1204,15 +1526,18 @@ function renderSessionDetail() {
 }
 
 function renderSessions() {
+  const sessions = filteredBankrollSessions();
   renderSessionSummary();
 
-  if (state.bankrollSessions.length === 0) {
-    elements.sessionList.innerHTML = '<div class="empty">No bankroll sessions yet.</div>';
-    renderSessionDetail();
+  if (sessions.length === 0) {
+    elements.sessionList.innerHTML = bankrollFilterActive()
+      ? '<div class="empty">No sessions match the current filters.</div>'
+      : '<div class="empty">No bankroll sessions yet.</div>';
+    renderSessionDetail(sessions);
     return;
   }
 
-  elements.sessionList.innerHTML = state.bankrollSessions
+  elements.sessionList.innerHTML = sessions
     .map(
       (session) => {
         const id = sessionId(session);
@@ -1240,7 +1565,7 @@ function renderSessions() {
     )
     .join("");
 
-  renderSessionDetail();
+  renderSessionDetail(sessions);
 }
 
 function filteredHands() {
@@ -1767,6 +2092,7 @@ function render() {
     state.replayStep = 0;
   }
 
+  renderBankrollFilters();
   renderMetrics();
   renderPlayerOptions();
   renderSessionOptions();
@@ -2080,6 +2406,25 @@ elements.playerFilter.addEventListener("change", () => {
   renderPlayerStats();
   renderCharts();
 });
+
+for (const control of elements.bankrollFilterControls) {
+  control.addEventListener("change", () => {
+    state.bankrollFilters[control.dataset.bankrollFilter] = control.value;
+    renderBankrollFilters();
+    renderMetrics();
+    renderBankrollCharts();
+    renderSessions();
+  });
+}
+
+elements.bankrollResetFilters.addEventListener("click", () => {
+  state.bankrollFilters = { ...emptyBankrollFilters };
+  renderBankrollFilters();
+  renderMetrics();
+  renderBankrollCharts();
+  renderSessions();
+});
+
 elements.handPlayerFilter.addEventListener("input", renderHands);
 for (const filter of [
   elements.handTagFilter,
