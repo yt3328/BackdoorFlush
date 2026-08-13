@@ -85,6 +85,27 @@ test("adds action-only players to the seat list", () => {
   assert.equal(hand.players.length, 3);
 });
 
+test("normalizes ten-card notation in live hands", () => {
+  const hand = buildLiveHand({
+    hero: "Hero",
+    heroCards: "10h 10d",
+    boardCards: "10s 2c 3d",
+    players: [
+      {
+        seat: 1,
+        name: "Hero"
+      },
+      {
+        seat: 2,
+        name: "Villain"
+      }
+    ]
+  });
+
+  assert.deepEqual(hand.holeCards.Hero, ["Th", "Td"]);
+  assert.deepEqual(hand.board, ["Ts", "2c", "3d"]);
+});
+
 test("rejects duplicate visible cards", () => {
   assert.throws(
     () => buildLiveHand({

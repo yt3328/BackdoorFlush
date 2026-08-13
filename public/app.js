@@ -27,6 +27,41 @@ const suggestedReviewTags = [
   "all-in",
   "live-hand"
 ];
+const liveTableSizes = [2, 3, 4, 5, 6, 7, 8, 9, 10];
+const livePositionOptions = ["BTN", "SB", "BB", "UTG", "UTG+1", "MP", "LJ", "HJ", "CO"];
+const liveDefaultPositions = {
+  2: ["BTN", "BB"],
+  3: ["BTN", "SB", "BB"],
+  4: ["BTN", "SB", "BB", "UTG"],
+  5: ["BTN", "SB", "BB", "UTG", "CO"],
+  6: ["BTN", "SB", "BB", "UTG", "HJ", "CO"],
+  7: ["BTN", "SB", "BB", "UTG", "LJ", "HJ", "CO"],
+  8: ["BTN", "SB", "BB", "UTG", "UTG+1", "LJ", "HJ", "CO"],
+  9: ["BTN", "SB", "BB", "UTG", "UTG+1", "MP", "LJ", "HJ", "CO"],
+  10: ["BTN", "SB", "BB", "UTG", "UTG+1", "MP", "MP", "LJ", "HJ", "CO"]
+};
+const cardSuitMap = {
+  h: {
+    entity: "&hearts;",
+    label: "hearts",
+    className: "heart"
+  },
+  d: {
+    entity: "&diams;",
+    label: "diamonds",
+    className: "diamond"
+  },
+  c: {
+    entity: "&clubs;",
+    label: "clubs",
+    className: "club"
+  },
+  s: {
+    entity: "&spades;",
+    label: "spades",
+    className: "spade"
+  }
+};
 
 const emptyBankrollSummary = {
   sessionCount: 0,
@@ -82,6 +117,8 @@ const state = {
   selectedDecisionId: null,
   selectedSessionId: null,
   selectedHandId: null,
+  livePlayerCount: 6,
+  liveSeatDrafts: Array.from({ length: 10 }, (_, index) => defaultLiveSeat(index, 6)),
   liveActions: [],
   replayStep: 0,
   importPollTimer: null
@@ -150,7 +187,9 @@ const elements = {
   liveForm: document.querySelector("#live-hand-form"),
   liveSession: document.querySelector("#live-session"),
   liveHero: document.querySelector("#live-hero"),
-  livePlayerRows: [...document.querySelectorAll("[data-live-player-row]")],
+  livePlayerCount: document.querySelector("#live-player-count"),
+  liveSeatGrid: document.querySelector("#live-seat-grid"),
+  liveStreetTabs: document.querySelector("#live-street-tabs"),
   liveActionStreet: document.querySelector("#live-action-street"),
   liveActionPlayer: document.querySelector("#live-action-player"),
   liveActionType: document.querySelector("#live-action-type"),
@@ -312,8 +351,59 @@ function setView(view) {
   }
 }
 
+function cardParts(card) {
+  const text = String(card ?? "").trim();
+  const match = text.match(/^(10|[2-9TJQKA])([cdhs])$/i);
+
+  if (!match) {
+    return {
+      rank: text === "??" ? "?" : text || "?",
+      suit: "",
+      entity: "",
+      label: "hidden card",
+      className: "card-back"
+    };
+  }
+
+  const rank = match[1].toUpperCase() === "T" ? "10" : match[1].toUpperCase();
+  const suit = match[2].toLowerCase();
+  const suitMeta = cardSuitMap[suit];
+
+  return {
+    rank,
+    suit,
+    entity: suitMeta.entity,
+    label: `${rank} of ${suitMeta.label}`,
+    className: `card-${suitMeta.className}`
+  };
+}
+
 function cardClass(card) {
-  return card.endsWith("h") || card.endsWith("d") ? "card red" : "card";
+  const parts = cardParts(card);
+  return `card ${parts.className}`;
+}
+
+function renderCard(card, { mini = false } = {}) {
+  const parts = cardParts(card);
+  const miniClass = mini ? " mini-card" : "";
+
+  if (parts.className === "card-back") {
+    return `
+      <span class="card card-back${miniClass}" aria-label="${escapeHtml(parts.label)}">
+        <span class="card-back-mark">BF</span>
+      </span>
+    `;
+  }
+
+  return `
+    <span class="${cardClass(card)}${miniClass}" aria-label="${escapeHtml(parts.label)}">
+      <span class="card-corner">
+        <strong>${escapeHtml(parts.rank)}</strong>
+        <em>${parts.entity}</em>
+      </span>
+      <span class="card-center">${parts.entity}</span>
+    </span>
+  `;
 }
 
 function renderCards(cards) {
@@ -321,7 +411,7 @@ function renderCards(cards) {
     return "";
   }
 
-  return `<div class="cards">${cards.map((card) => `<span class="${cardClass(card)}">${escapeHtml(card)}</span>`).join("")}</div>`;
+  return `<div class="cards">${cards.map((card) => renderCard(card)).join("")}</div>`;
 }
 
 function formatAmount(amount) {
@@ -931,8 +1021,84 @@ function renderHandFilterOptions() {
   elements.handSort.value = ["newest", "biggest-loss", "biggest-win", "biggest-pot", "unreviewed"].includes(previous.sort) ? previous.sort : "newest";
 }
 
+function defaultPositionForSeat(index, playerCount = state.livePlayerCount) {
+  return liveDefaultPositions[playerCount]?.[index] ?? livePositionOptions[index % livePositionOptions.length];
+}
+
+function defaultLiveSeat(index, playerCount = 6) {
+  return {
+    seat: String(index + 1),
+    name: index === 0 ? "Hero" : index < playerCount ? `Villain ${index}` : "",
+    position: defaultPositionForSeat(index, playerCount),
+    stack: index < playerCount ? "300" : ""
+  };
+}
+
+function liveSeatRows() {
+  return [...elements.liveSeatGrid.querySelectorAll("[data-live-player-row]")];
+}
+
+function syncLiveSeatDraftsFromDom() {
+  for (const row of liveSeatRows()) {
+    const index = Number(row.dataset.livePlayerRow);
+    state.liveSeatDrafts[index] = {
+      seat: row.querySelector("[data-live-seat]").value || String(index + 1),
+      name: row.querySelector("[data-live-player-name]").value,
+      position: row.querySelector("[data-live-position]").value,
+      stack: row.querySelector("[data-live-stack]").value
+    };
+  }
+}
+
+function renderLivePlayerCount() {
+  for (const button of elements.livePlayerCount.querySelectorAll("[data-live-player-count]")) {
+    button.classList.toggle("active", Number(button.dataset.livePlayerCount) === state.livePlayerCount);
+  }
+}
+
+function renderPositionOptions(selectedPosition) {
+  return livePositionOptions
+    .map((position) => `<option value="${escapeHtml(position)}" ${position === selectedPosition ? "selected" : ""}>${escapeHtml(position)}</option>`)
+    .join("");
+}
+
+function renderLiveSeatRows() {
+  renderLivePlayerCount();
+
+  const labelRow = `
+    <div class="live-seat-row live-seat-labels">
+      <span>Seat</span>
+      <span>Player</span>
+      <span>Position</span>
+      <span>Stack</span>
+    </div>
+  `;
+  const rows = Array.from({ length: state.livePlayerCount }, (_, index) => {
+    const draft = state.liveSeatDrafts[index] ?? defaultLiveSeat(index, state.livePlayerCount);
+    const normalizedDraft = {
+      ...draft,
+      position: draft.position || defaultPositionForSeat(index, state.livePlayerCount),
+      stack: draft.stack || "300"
+    };
+    state.liveSeatDrafts[index] = normalizedDraft;
+
+    return `
+      <div class="live-seat-row" data-live-player-row="${index}">
+        <input data-live-seat value="${escapeHtml(normalizedDraft.seat)}" inputmode="numeric" aria-label="Seat ${index + 1}">
+        <input data-live-player-name value="${escapeHtml(normalizedDraft.name)}" autocomplete="off" aria-label="Seat ${index + 1} player">
+        <select data-live-position aria-label="Seat ${index + 1} position">
+          ${renderPositionOptions(normalizedDraft.position)}
+        </select>
+        <input data-live-stack value="${escapeHtml(normalizedDraft.stack)}" inputmode="decimal" aria-label="Seat ${index + 1} stack">
+      </div>
+    `;
+  }).join("");
+
+  elements.liveSeatGrid.innerHTML = labelRow + rows;
+}
+
 function livePlayers() {
-  return elements.livePlayerRows
+  return liveSeatRows()
     .map((row, index) => ({
       seat: row.querySelector("[data-live-seat]").value || index + 1,
       name: row.querySelector("[data-live-player-name]").value.trim(),
@@ -972,15 +1138,104 @@ function renderLiveActions() {
     return;
   }
 
-  elements.liveActionList.innerHTML = state.liveActions
-    .map((action, index) => `
-      <div class="live-action-row">
-        <span>${escapeHtml(streetLabels[action.street] ?? action.street)}</span>
-        <strong>${formatAction(action)}</strong>
-        <button class="button ghost" type="button" data-delete-live-action="${index}">Remove</button>
-      </div>
-    `)
+  elements.liveActionList.innerHTML = renderActionTimeline(state.liveActions, {
+    removable: true
+  });
+}
+
+function actionAmountLabel(action) {
+  return action.amount ? formatCurrency(action.amount) : "";
+}
+
+function actionTypeClass(action) {
+  return String(action.type ?? "").replace(/[^a-z0-9-]/gi, "").toLowerCase();
+}
+
+function renderActionTimeline(actions, { removable = false, activeIndex = -1 } = {}) {
+  const renderedStreets = streetOrder
+    .map((street) => {
+      const streetActions = actions
+        .map((action, index) => ({
+          action,
+          index
+        }))
+        .filter((entry) => entry.action.street === street);
+
+      if (streetActions.length === 0) {
+        return "";
+      }
+
+      return `
+        <section class="action-street-group">
+          <h5>${escapeHtml(streetLabels[street] ?? street)}</h5>
+          <div class="action-street-list">
+            ${streetActions.map(({ action, index }) => `
+              <div class="live-action-row ${index === activeIndex ? "active" : ""}">
+                <span class="action-order">${index + 1}</span>
+                <strong>${escapeHtml(action.player)}</strong>
+                <span class="action-badge ${actionTypeClass(action)}">${escapeHtml(action.type)}</span>
+                <em>${escapeHtml(actionAmountLabel(action))}</em>
+                ${removable ? `<button class="button ghost" type="button" data-delete-live-action="${index}">Remove</button>` : ""}
+              </div>
+            `).join("")}
+          </div>
+        </section>
+      `;
+    })
     .join("");
+
+  return `<div class="action-timeline">${renderedStreets}</div>`;
+}
+
+function seatStyle(index, total) {
+  const angle = -90 + (360 / Math.max(1, total)) * index;
+  const radians = (angle * Math.PI) / 180;
+  const x = 50 + Math.cos(radians) * 44;
+  const y = 50 + Math.sin(radians) * 40;
+
+  return `--seat-left: ${x.toFixed(2)}%; --seat-top: ${y.toFixed(2)}%;`;
+}
+
+function renderTableSeats(players, {
+  hero = "",
+  heroCards = [],
+  activePlayer = "",
+  foldedPlayers = new Set(),
+  revealedHands = {}
+} = {}) {
+  return players
+    .map((player, index) => {
+      const isHero = player.name === hero;
+      const isActive = player.name === activePlayer;
+      const isFolded = foldedPlayers.has(player.name);
+      const cards = revealedHands[player.name] ?? (isHero ? heroCards : ["??", "??"]);
+      const classes = [
+        "table-seat",
+        isHero ? "hero" : "",
+        isActive ? "active" : "",
+        isFolded ? "folded" : ""
+      ].filter(Boolean).join(" ");
+
+      return `
+        <div class="${classes}" style="${seatStyle(index, players.length)}">
+          <span>${escapeHtml(player.position ?? `Seat ${player.seat}`)}</span>
+          <strong>${escapeHtml(player.name)}</strong>
+          <small>${formatNumber(player.stack, 0)} stack</small>
+          <div class="mini-cards">${cards.map((card) => renderCard(card, { mini: true })).join("")}</div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function currentLiveStreet() {
+  return elements.liveActionStreet.value || "hole-cards";
+}
+
+function renderStreetTabs() {
+  for (const button of elements.liveStreetTabs.querySelectorAll("[data-live-street]")) {
+    button.classList.toggle("active", button.dataset.liveStreet === currentLiveStreet());
+  }
 }
 
 function renderLivePreview() {
@@ -990,29 +1245,55 @@ function renderLivePreview() {
   const heroCards = String(form.get("heroCards") ?? "").trim().split(/[\s,]+/).filter(Boolean);
   const board = String(form.get("boardCards") ?? "").trim().split(/[\s,]+/).filter(Boolean);
   const players = livePlayers();
+  const lastAction = state.liveActions.at(-1);
+  const foldedPlayers = new Set(state.liveActions.filter((action) => action.type === "folds").map((action) => action.player));
+  const trackedPot = trackedPotAt({
+    actions: state.liveActions
+  }, state.liveActions.length + 1);
+  const visibleBoard = board.length ? renderCards(board) : renderCards(["??", "??", "??"]);
+
+  renderStreetTabs();
 
   elements.livePreview.innerHTML = `
-    <article class="preview-card">
-      <span class="subtle">Session</span>
-      <strong>${escapeHtml(sessionLabel(session))}</strong>
-    </article>
-    <article class="preview-card">
-      <span class="subtle">Hero</span>
-      <strong>${escapeHtml(hero)}</strong>
-      ${renderCards(heroCards)}
-    </article>
-    <article class="preview-card">
-      <span class="subtle">Board</span>
-      ${board.length ? renderCards(board) : "<strong>Not set</strong>"}
-    </article>
-    <article class="preview-card">
-      <span class="subtle">Seats</span>
-      <strong>${players.length}</strong>
-    </article>
-    <article class="preview-card">
-      <span class="subtle">Actions</span>
-      <strong>${state.liveActions.length}</strong>
-    </article>
+    <div class="live-table-preview">
+      <div class="live-table-felt">
+        ${renderTableSeats(players, {
+          hero,
+          heroCards,
+          activePlayer: lastAction?.player ?? "",
+          foldedPlayers
+        })}
+        <div class="board-zone live-board-zone">
+          <span class="subtle">${escapeHtml(sessionLabel(session))}</span>
+          ${visibleBoard}
+          <strong>${formatCurrency(trackedPot)}</strong>
+          <small>tracked pot</small>
+        </div>
+      </div>
+    </div>
+    <div class="live-preview-stats">
+      <article class="preview-card">
+        <span class="subtle">Table</span>
+        <strong>${escapeHtml(form.get("tableName") || "Live table")}</strong>
+      </article>
+      <article class="preview-card">
+        <span class="subtle">Stakes</span>
+        <strong>${escapeHtml(form.get("stakes") || "Not set")}</strong>
+      </article>
+      <article class="preview-card">
+        <span class="subtle">Seats</span>
+        <strong>${players.length}</strong>
+      </article>
+      <article class="preview-card">
+        <span class="subtle">Actions</span>
+        <strong>${state.liveActions.length}</strong>
+      </article>
+    </div>
+    ${
+      state.liveActions.length
+        ? renderActionTimeline(state.liveActions, { activeIndex: state.liveActions.length - 1 })
+        : '<div class="empty compact">No actions yet.</div>'
+    }
   `;
 }
 
@@ -1741,23 +2022,12 @@ function renderReplayer(hand, steps) {
   const actionText = step.action
     ? formatAction(step.action)
     : `Hand #${escapeHtml(hand.handNumber)} ready`;
-  const seats = hand.players
-    .map((player, index) => {
-      const isHero = player.name === hand.hero;
-      const isActive = player.name === activePlayer;
-      const isFolded = foldedPlayers.has(player.name);
-      const cards = isHero ? heroCards : ["??", "??"];
-
-      return `
-        <div class="replay-seat seat-pos-${index % 6} ${isActive ? "active" : ""} ${isFolded ? "folded" : ""}">
-          <span>${escapeHtml(player.position ?? `Seat ${player.seat}`)}</span>
-          <strong>${escapeHtml(player.name)}</strong>
-          <small>${Number(player.stack).toFixed(2)}</small>
-          <div class="mini-cards">${cards.map((card) => `<em class="${cardClass(card)}">${escapeHtml(card)}</em>`).join("")}</div>
-        </div>
-      `;
-    })
-    .join("");
+  const seats = renderTableSeats(hand.players, {
+    hero: hand.hero,
+    heroCards,
+    activePlayer,
+    foldedPlayers
+  });
 
   return `
     <section class="replayer">
@@ -1780,6 +2050,7 @@ function renderReplayer(hand, steps) {
         <button class="button secondary" type="button" data-replay="next">Next</button>
         <button class="button secondary" type="button" data-replay="end">End</button>
       </div>
+      ${hand.actions.length ? renderActionTimeline(hand.actions, { activeIndex: Math.max(0, state.replayStep - 1) }) : ""}
     </section>
   `;
 }
@@ -2098,6 +2369,7 @@ function render() {
   renderSessionOptions();
   renderLiveSessionOptions();
   renderHandFilterOptions();
+  renderLiveSeatRows();
   renderLivePlayerOptions();
   renderLiveActions();
   renderLivePreview();
@@ -2313,23 +2585,66 @@ elements.navButtons.forEach((button) => {
   button.addEventListener("click", () => setView(button.dataset.view));
 });
 
-elements.livePlayerRows.forEach((row) => {
-  row.addEventListener("input", () => {
-    renderLivePlayerOptions();
-    renderLivePreview();
-  });
-  row.addEventListener("change", () => {
-    renderLivePlayerOptions();
-    renderLivePreview();
-  });
-});
+elements.livePlayerCount.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-live-player-count]");
+  if (!target) {
+    return;
+  }
 
-elements.liveForm.addEventListener("input", () => {
+  syncLiveSeatDraftsFromDom();
+  const previousCount = state.livePlayerCount;
+  state.livePlayerCount = Number(target.dataset.livePlayerCount);
+  for (let index = 0; index < state.livePlayerCount; index += 1) {
+    const existingDraft = state.liveSeatDrafts[index] ?? {};
+    const previousDefaultPosition = defaultPositionForSeat(index, previousCount);
+    const nextDefault = defaultLiveSeat(index, state.livePlayerCount);
+
+    state.liveSeatDrafts[index] = {
+      ...existingDraft,
+      seat: existingDraft.seat || nextDefault.seat,
+      name: existingDraft.name || nextDefault.name,
+      position: !existingDraft.position || existingDraft.position === previousDefaultPosition
+        ? nextDefault.position
+        : existingDraft.position,
+      stack: existingDraft.stack || nextDefault.stack
+    };
+  }
+  renderLiveSeatRows();
   renderLivePlayerOptions();
   renderLivePreview();
 });
 
-elements.liveSession.addEventListener("change", renderLivePreview);
+elements.liveSeatGrid.addEventListener("input", () => {
+  syncLiveSeatDraftsFromDom();
+  renderLivePlayerOptions();
+  renderLivePreview();
+});
+
+elements.liveSeatGrid.addEventListener("change", () => {
+  syncLiveSeatDraftsFromDom();
+  renderLivePlayerOptions();
+  renderLivePreview();
+});
+
+elements.liveStreetTabs.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-live-street]");
+  if (!target) {
+    return;
+  }
+
+  elements.liveActionStreet.value = target.dataset.liveStreet;
+  renderStreetTabs();
+});
+
+elements.liveForm.addEventListener("input", () => {
+  syncLiveSeatDraftsFromDom();
+  renderLivePlayerOptions();
+  renderLivePreview();
+});
+
+elements.liveSession.addEventListener("change", () => {
+  renderLivePreview();
+});
 
 elements.liveAddAction.addEventListener("click", () => {
   const player = elements.liveActionPlayer.value;

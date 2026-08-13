@@ -42,13 +42,14 @@ function positiveNumber(value, fallback = 0) {
 
 function normalizeCard(value, label) {
   const text = cleanText(value);
-  const match = text.match(/^([2-9TJQKA])([cdhs])$/i);
+  const match = text.match(/^(10|[2-9TJQKA])([cdhs])$/i);
 
   if (!match) {
     throw new Error(`${label} has an invalid card: ${text || "blank"}.`);
   }
 
-  return `${match[1].toUpperCase()}${match[2].toLowerCase()}`;
+  const rank = match[1].toUpperCase() === "10" ? "T" : match[1].toUpperCase();
+  return `${rank}${match[2].toLowerCase()}`;
 }
 
 function cardsFromInput(value, { label, max, required = false } = {}) {

@@ -478,92 +478,31 @@
 
                 <section class="builder-block">
                   <div class="builder-head">
+                    <h4>Table Setup</h4>
+                  </div>
+                  <div id="live-player-count" class="seat-count-control" aria-label="Players at table">
+                    <button class="active" type="button" data-live-player-count="2">2</button>
+                    <button type="button" data-live-player-count="3">3</button>
+                    <button type="button" data-live-player-count="4">4</button>
+                    <button type="button" data-live-player-count="5">5</button>
+                    <button type="button" data-live-player-count="6">6</button>
+                    <button type="button" data-live-player-count="7">7</button>
+                    <button type="button" data-live-player-count="8">8</button>
+                    <button type="button" data-live-player-count="9">9</button>
+                    <button type="button" data-live-player-count="10">10</button>
+                  </div>
+                </section>
+
+                <section class="builder-block">
+                  <div class="builder-head">
                     <h4>Seats</h4>
                   </div>
-                  <div class="live-seat-grid" aria-label="Live hand seats">
+                  <div id="live-seat-grid" class="live-seat-grid" aria-label="Live hand seats">
                     <div class="live-seat-row live-seat-labels">
                       <span>Seat</span>
                       <span>Player</span>
                       <span>Position</span>
                       <span>Stack</span>
-                    </div>
-                    <div class="live-seat-row" data-live-player-row>
-                      <input data-live-seat value="1" inputmode="numeric" aria-label="Seat 1">
-                      <input data-live-player-name value="Hero" autocomplete="off" aria-label="Seat 1 player">
-                      <select data-live-position aria-label="Seat 1 position">
-                        <option value="BTN">BTN</option>
-                        <option value="SB">SB</option>
-                        <option value="BB">BB</option>
-                        <option value="UTG">UTG</option>
-                        <option value="HJ">HJ</option>
-                        <option value="CO">CO</option>
-                      </select>
-                      <input data-live-stack value="300" inputmode="decimal" aria-label="Seat 1 stack">
-                    </div>
-                    <div class="live-seat-row" data-live-player-row>
-                      <input data-live-seat value="2" inputmode="numeric" aria-label="Seat 2">
-                      <input data-live-player-name value="Villain 1" autocomplete="off" aria-label="Seat 2 player">
-                      <select data-live-position aria-label="Seat 2 position">
-                        <option value="SB">SB</option>
-                        <option value="BB">BB</option>
-                        <option value="UTG">UTG</option>
-                        <option value="HJ">HJ</option>
-                        <option value="CO">CO</option>
-                        <option value="BTN">BTN</option>
-                      </select>
-                      <input data-live-stack value="300" inputmode="decimal" aria-label="Seat 2 stack">
-                    </div>
-                    <div class="live-seat-row" data-live-player-row>
-                      <input data-live-seat value="3" inputmode="numeric" aria-label="Seat 3">
-                      <input data-live-player-name value="Villain 2" autocomplete="off" aria-label="Seat 3 player">
-                      <select data-live-position aria-label="Seat 3 position">
-                        <option value="BB">BB</option>
-                        <option value="UTG">UTG</option>
-                        <option value="HJ">HJ</option>
-                        <option value="CO">CO</option>
-                        <option value="BTN">BTN</option>
-                        <option value="SB">SB</option>
-                      </select>
-                      <input data-live-stack value="300" inputmode="decimal" aria-label="Seat 3 stack">
-                    </div>
-                    <div class="live-seat-row" data-live-player-row>
-                      <input data-live-seat value="4" inputmode="numeric" aria-label="Seat 4">
-                      <input data-live-player-name value="Villain 3" autocomplete="off" aria-label="Seat 4 player">
-                      <select data-live-position aria-label="Seat 4 position">
-                        <option value="UTG">UTG</option>
-                        <option value="HJ">HJ</option>
-                        <option value="CO">CO</option>
-                        <option value="BTN">BTN</option>
-                        <option value="SB">SB</option>
-                        <option value="BB">BB</option>
-                      </select>
-                      <input data-live-stack value="300" inputmode="decimal" aria-label="Seat 4 stack">
-                    </div>
-                    <div class="live-seat-row" data-live-player-row>
-                      <input data-live-seat value="5" inputmode="numeric" aria-label="Seat 5">
-                      <input data-live-player-name value="" autocomplete="off" aria-label="Seat 5 player">
-                      <select data-live-position aria-label="Seat 5 position">
-                        <option value="HJ">HJ</option>
-                        <option value="CO">CO</option>
-                        <option value="BTN">BTN</option>
-                        <option value="SB">SB</option>
-                        <option value="BB">BB</option>
-                        <option value="UTG">UTG</option>
-                      </select>
-                      <input data-live-stack value="" inputmode="decimal" aria-label="Seat 5 stack">
-                    </div>
-                    <div class="live-seat-row" data-live-player-row>
-                      <input data-live-seat value="6" inputmode="numeric" aria-label="Seat 6">
-                      <input data-live-player-name value="" autocomplete="off" aria-label="Seat 6 player">
-                      <select data-live-position aria-label="Seat 6 position">
-                        <option value="CO">CO</option>
-                        <option value="BTN">BTN</option>
-                        <option value="SB">SB</option>
-                        <option value="BB">BB</option>
-                        <option value="UTG">UTG</option>
-                        <option value="HJ">HJ</option>
-                      </select>
-                      <input data-live-stack value="" inputmode="decimal" aria-label="Seat 6 stack">
                     </div>
                   </div>
                 </section>
@@ -572,14 +511,15 @@
                   <div class="builder-head">
                     <h4>Actions</h4>
                   </div>
+                  <div id="live-street-tabs" class="street-tabs" aria-label="Action street">
+                    <button class="active" type="button" data-live-street="hole-cards">Preflop</button>
+                    <button type="button" data-live-street="flop">Flop</button>
+                    <button type="button" data-live-street="turn">Turn</button>
+                    <button type="button" data-live-street="river">River</button>
+                    <button type="button" data-live-street="show-down">Showdown</button>
+                  </div>
                   <div class="live-action-compose">
-                    <select id="live-action-street" aria-label="Action street">
-                      <option value="hole-cards">Preflop</option>
-                      <option value="flop">Flop</option>
-                      <option value="turn">Turn</option>
-                      <option value="river">River</option>
-                      <option value="show-down">Showdown</option>
-                    </select>
+                    <input id="live-action-street" type="hidden" value="hole-cards">
                     <select id="live-action-player" aria-label="Action player"></select>
                     <select id="live-action-type" aria-label="Action type">
                       <option value="folds">Folds</option>
@@ -589,7 +529,7 @@
                       <option value="raises">Raises</option>
                     </select>
                     <input id="live-action-amount" inputmode="decimal" placeholder="amount" aria-label="Action amount">
-                    <button id="live-add-action" class="button secondary" type="button">Add</button>
+                    <button id="live-add-action" class="button secondary" type="button">Add Action</button>
                   </div>
                   <div id="live-action-list" class="live-action-list"></div>
                 </section>
