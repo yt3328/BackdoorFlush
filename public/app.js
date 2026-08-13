@@ -136,7 +136,8 @@ const emptyBankrollFilters = {
   endDate: "",
   location: "",
   gameType: "",
-  stakes: ""
+  stakes: "",
+  reviewStatus: ""
 };
 
 const state = {
@@ -180,7 +181,10 @@ const state = {
   replayStep: 0,
   importPollTimer: null,
   showLanding: true,
-  demoMode: false
+  demoMode: false,
+  lastSyncedAt: null,
+  lastSavedAt: null,
+  lastSaveMessage: ""
 };
 
 const apiBase = window.POKER_FELT_SCOPE_API_BASE ?? "";
@@ -197,6 +201,7 @@ const elements = {
   signOut: document.querySelector("#sign-out"),
   authNotice: document.querySelector("#auth-notice"),
   demoBanner: document.querySelector("#demo-banner"),
+  workspaceHealth: document.querySelector("#workspace-health"),
   exitDemo: document.querySelector("#exit-demo"),
   loadDemo: document.querySelector("#load-demo"),
   clearSession: document.querySelector("#clear-session"),
@@ -240,8 +245,8 @@ const elements = {
   bankrollChart: document.querySelector("#bankroll-chart"),
   locationChart: document.querySelector("#location-chart"),
   bankrollFilterControls: [...document.querySelectorAll("[data-bankroll-filter]")],
-  bankrollFilterSummary: document.querySelector("#bankroll-filter-summary"),
-  bankrollResetFilters: document.querySelector("#bankroll-reset-filters"),
+  bankrollFilterSummaries: [...document.querySelectorAll("[data-bankroll-filter-summary]")],
+  bankrollResetFilters: [...document.querySelectorAll("[data-bankroll-reset-filters]")],
   handList: document.querySelector("#hand-list"),
   handDetail: document.querySelector("#hand-detail"),
   bankrollForm: document.querySelector("#bankroll-form"),
@@ -354,6 +359,64 @@ function canUsePrivateApi() {
   return !auth.enabled || auth.isSignedIn();
 }
 
+function workspaceModeMeta() {
+  const signedIn = auth.isSignedIn();
+
+  if (state.demoMode) {
+    return {
+      mode: "demo",
+      topbarLabel: "Demo mode",
+      title: "Demo workspace",
+      badge: "Temporary",
+      detail: "Demo data is memory-only and resets when the page refreshes or you exit demo mode.",
+      saveTarget: "Changes are temporary in demo mode.",
+      saveToast: "Saved in the temporary demo."
+    };
+  }
+
+  if (auth.enabled) {
+    if (signedIn) {
+      return {
+        mode: "cloud",
+        topbarLabel: auth.displayName(),
+        title: "Cloud workspace",
+        badge: "Saved to account",
+        detail: "Imports, bankroll sessions, live hands, and reviews are stored under your signed-in account.",
+        saveTarget: "Saved to your account.",
+        saveToast: "Saved to your account."
+      };
+    }
+
+    return {
+      mode: "signed-out",
+      topbarLabel: "Signed out",
+      title: "Signed out",
+      badge: "Sign in needed",
+      detail: "Sign in before adding real sessions or hands so your work is tied to your account.",
+      saveTarget: "Sign in before saving.",
+      saveToast: "Sign in before saving."
+    };
+  }
+
+  return {
+    mode: "local",
+    topbarLabel: "Local mode",
+    title: "Local workspace",
+    badge: "Saved on this computer",
+    detail: "Local data is saved in this project workspace on this computer.",
+    saveTarget: "Saved on this computer.",
+    saveToast: "Saved on this computer."
+  };
+}
+
+function markWorkspaceSaved(message = "Workspace updated") {
+  state.lastSavedAt = new Date().toISOString();
+  state.lastSaveMessage = message;
+  renderWorkspaceHealth();
+
+  return `${message}. ${workspaceModeMeta().saveToast}`;
+}
+
 function clearDashboardData() {
   state.hands = [];
   state.imports = [];
@@ -387,30 +450,27 @@ function clearDashboardData() {
   state.selectedSessionId = null;
   state.selectedHandId = null;
   state.replayStep = 0;
+  state.lastSyncedAt = null;
+  state.lastSavedAt = null;
+  state.lastSaveMessage = "";
 }
 
 function renderAuthState() {
   const signedIn = auth.isSignedIn();
   const needsSignIn = auth.enabled && !signedIn && !state.demoMode && !state.showLanding;
+  const mode = workspaceModeMeta();
 
   elements.landing.hidden = !state.showLanding;
   elements.appShell.hidden = state.showLanding;
 
-  elements.authStatus.textContent = auth.enabled
-    ? state.demoMode
-      ? "Demo mode"
-      : signedIn
-      ? auth.displayName()
-      : "Signed out"
-    : state.demoMode
-      ? "Demo mode"
-      : "Local mode";
+  elements.authStatus.textContent = mode.topbarLabel;
+  elements.authStatus.dataset.mode = mode.mode;
   elements.signIn.hidden = !auth.enabled || signedIn || state.demoMode;
   elements.signOut.hidden = !auth.enabled || !signedIn || state.demoMode;
   elements.authNotice.hidden = !needsSignIn;
   elements.demoBanner.hidden = !state.demoMode;
   elements.loadDemo.textContent = state.demoMode ? "Reload Demo" : "Explore Demo";
-  elements.clearSession.textContent = state.demoMode ? "Exit Demo" : "Clear Session";
+  elements.clearSession.textContent = state.demoMode ? "Exit Demo" : "Clear Hands";
   elements.refresh.disabled = needsSignIn || state.demoMode;
   document.body.classList.toggle("landing-open", state.showLanding);
   document.body.classList.toggle("demo-mode", state.demoMode);
@@ -1153,6 +1213,7 @@ function loadDemoExperience({ quiet = false } = {}) {
   state.selectedSessionId = sessions.at(-1)?.id ?? null;
   state.selectedHandId = hands[0]?.id ?? null;
   state.replayStep = 0;
+  state.lastSyncedAt = new Date().toISOString();
   if (state.selectedHandId) {
     setDemoDecisionContext(state.selectedHandId);
   }
@@ -1522,6 +1583,8 @@ function filteredBankrollSessions() {
   const { startDate, endDate } = normalizedDateRange();
 
   return state.bankrollSessions.filter((session) => {
+    const id = sessionId(session);
+    const linkedHands = handsForSession(id);
     const date = bankrollSessionDate(session);
     if (startDate && date < startDate) {
       return false;
@@ -1536,6 +1599,19 @@ function filteredBankrollSessions() {
       return false;
     }
     if (state.bankrollFilters.stakes && bankrollSessionField(session, "stakes") !== state.bankrollFilters.stakes) {
+      return false;
+    }
+
+    if (state.bankrollFilters.reviewStatus === "open" && !linkedHands.some((hand) => !hand.reviewedAt)) {
+      return false;
+    }
+    if (state.bankrollFilters.reviewStatus === "reviewed" && (linkedHands.length === 0 || linkedHands.some((hand) => !hand.reviewedAt))) {
+      return false;
+    }
+    if (state.bankrollFilters.reviewStatus === "linked" && linkedHands.length === 0) {
+      return false;
+    }
+    if (state.bankrollFilters.reviewStatus === "unlinked" && linkedHands.length > 0) {
       return false;
     }
 
@@ -1556,8 +1632,8 @@ function uniqueBankrollValues(field) {
 }
 
 function setBankrollSelectOptions(name, label, values) {
-  const control = elements.bankrollFilterControls.find((item) => item.dataset.bankrollFilter === name);
-  if (!control) {
+  const controls = elements.bankrollFilterControls.filter((item) => item.dataset.bankrollFilter === name);
+  if (controls.length === 0) {
     return;
   }
 
@@ -1565,16 +1641,24 @@ function setBankrollSelectOptions(name, label, values) {
     state.bankrollFilters[name] = "";
   }
 
-  control.innerHTML = [
-    `<option value="">${escapeHtml(label)}</option>`,
-    ...values.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`)
-  ].join("");
-  control.value = state.bankrollFilters[name];
+  for (const control of controls) {
+    control.innerHTML = [
+      `<option value="">${escapeHtml(label)}</option>`,
+      ...values.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`)
+    ].join("");
+    control.value = state.bankrollFilters[name];
+  }
 }
 
 function bankrollViewParts() {
   const parts = [homePeriodOption().label];
   const manualRange = normalizedManualDateRange();
+  const reviewStatusLabels = {
+    open: "has open reviews",
+    reviewed: "all linked hands reviewed",
+    linked: "has linked hands",
+    unlinked: "no linked hands"
+  };
 
   if (manualRange.startDate && manualRange.endDate) {
     parts.push(`${formatLongDate(manualRange.startDate)} to ${formatLongDate(manualRange.endDate)}`);
@@ -1588,6 +1672,10 @@ function bankrollViewParts() {
     if (state.bankrollFilters[name]) {
       parts.push(state.bankrollFilters[name]);
     }
+  }
+
+  if (state.bankrollFilters.reviewStatus) {
+    parts.push(reviewStatusLabels[state.bankrollFilters.reviewStatus] ?? state.bankrollFilters.reviewStatus);
   }
 
   return parts;
@@ -1615,8 +1703,13 @@ function renderBankrollFilters() {
   setBankrollSelectOptions("gameType", "All games", uniqueBankrollValues("gameType"));
   setBankrollSelectOptions("stakes", "All stakes", uniqueBankrollValues("stakes"));
 
+  if (!["", "open", "reviewed", "linked", "unlinked"].includes(state.bankrollFilters.reviewStatus)) {
+    state.bankrollFilters.reviewStatus = "";
+  }
+
   for (const control of elements.bankrollFilterControls) {
     if (control.tagName === "SELECT") {
+      control.value = state.bankrollFilters[control.dataset.bankrollFilter] ?? "";
       continue;
     }
     control.value = state.bankrollFilters[control.dataset.bankrollFilter] ?? "";
@@ -1625,9 +1718,13 @@ function renderBankrollFilters() {
   const filteredSessions = filteredBankrollSessions();
   const parts = bankrollViewParts();
 
-  elements.bankrollFilterSummary.textContent = parts.length
+  const summaryText = parts.length
     ? `${filteredSessions.length} of ${state.bankrollSessions.length} sessions shown / ${parts.join(" / ")}`
     : `${state.bankrollSessions.length} sessions shown`;
+
+  for (const summary of elements.bankrollFilterSummaries) {
+    summary.textContent = summaryText;
+  }
 }
 
 function sessionId(session) {
@@ -1904,6 +2001,140 @@ function renderMetrics() {
     signed: true
   })}/hr`;
   elements.metrics.bbhr.textContent = formatNumber(bankrollSummary.bbPerHour, 1);
+}
+
+function formatTimestamp(value) {
+  if (!value) {
+    return "No activity yet";
+  }
+
+  return new Date(value).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+function savedHandReviewCount() {
+  return state.hands.filter((hand) => (
+    Boolean(hand.reviewedAt) ||
+    Boolean(String(hand.notes ?? "").trim()) ||
+    handTags(hand).length > 0
+  )).length;
+}
+
+function decisionReviewEntries() {
+  return state.hands.flatMap((hand) => (
+    Object.values(hand.decisionReviews && typeof hand.decisionReviews === "object" ? hand.decisionReviews : {})
+  ));
+}
+
+function savedDecisionReviewCount() {
+  return decisionReviewEntries().filter((review) => (
+    Boolean(review?.reviewedAt) ||
+    Boolean(String(review?.note ?? "").trim()) ||
+    Object.values(review?.checklist ?? {}).some((value) => String(value ?? "").trim())
+  )).length;
+}
+
+function workspaceAttentionItems({ queuedImports, failedImports, unlinkedHands, openReviews }) {
+  const items = [];
+
+  if (failedImports > 0) {
+    items.push(`${failedImports} failed import${failedImports === 1 ? "" : "s"}`);
+  }
+
+  if (queuedImports > 0) {
+    items.push(`${queuedImports} import${queuedImports === 1 ? "" : "s"} parsing`);
+  }
+
+  if (unlinkedHands > 0 && state.bankrollSessions.length > 0) {
+    items.push(`${unlinkedHands} hand${unlinkedHands === 1 ? "" : "s"} not linked to a session`);
+  }
+
+  if (openReviews > 0) {
+    items.push(`${openReviews} open review${openReviews === 1 ? "" : "s"}`);
+  }
+
+  return items;
+}
+
+function renderWorkspaceHealth() {
+  if (!elements.workspaceHealth) {
+    return;
+  }
+
+  if (state.showLanding) {
+    elements.workspaceHealth.hidden = true;
+    elements.workspaceHealth.innerHTML = "";
+    return;
+  }
+
+  const mode = workspaceModeMeta();
+  const filteredSessions = filteredBankrollSessions();
+  const linkedHands = state.hands.filter((hand) => hand.sessionId).length;
+  const unlinkedHands = Math.max(0, state.hands.length - linkedHands);
+  const readyImports = state.imports.filter((item) => (item.status ?? "ready") === "ready").length;
+  const queuedImports = state.imports.filter((item) => item.status === "queued").length;
+  const failedImports = state.imports.filter((item) => item.status === "failed").length;
+  const openReviews = state.hands.filter((hand) => !hand.reviewedAt).length;
+  const reviewedHands = Math.max(0, state.hands.length - openReviews);
+  const reviewNotes = savedHandReviewCount();
+  const decisionReviews = savedDecisionReviewCount();
+  const attentionItems = workspaceAttentionItems({
+    queuedImports,
+    failedImports,
+    unlinkedHands,
+    openReviews
+  });
+  const lastActivity = state.lastSavedAt
+    ? `${state.lastSaveMessage || "Last saved"} / ${formatTimestamp(state.lastSavedAt)}`
+    : state.lastSyncedAt
+      ? `Last refreshed / ${formatTimestamp(state.lastSyncedAt)}`
+      : "No workspace activity yet";
+
+  elements.workspaceHealth.hidden = false;
+  elements.workspaceHealth.innerHTML = `
+    <div class="workspace-health-head">
+      <div>
+        <p class="eyebrow">Workspace</p>
+        <h3>${escapeHtml(mode.title)} <span class="mode-pill ${escapeHtml(mode.mode)}">${escapeHtml(mode.badge)}</span></h3>
+        <p>${escapeHtml(mode.detail)}</p>
+      </div>
+      <div class="workspace-save-state">
+        <span>${escapeHtml(mode.saveTarget)}</span>
+        <strong>${escapeHtml(lastActivity)}</strong>
+      </div>
+    </div>
+    <div class="workspace-health-grid">
+      <div>
+        <span>Sessions</span>
+        <strong>${filteredSessions.length}/${state.bankrollSessions.length}</strong>
+        <small>${escapeHtml(bankrollViewParts().join(" / "))}</small>
+      </div>
+      <div>
+        <span>Linked hands</span>
+        <strong>${linkedHands}/${state.hands.length}</strong>
+        <small>${unlinkedHands} unlinked</small>
+      </div>
+      <div>
+        <span>Imports</span>
+        <strong>${readyImports}</strong>
+        <small>${queuedImports} parsing / ${failedImports} failed</small>
+      </div>
+      <div>
+        <span>Review work</span>
+        <strong>${reviewedHands}/${state.hands.length}</strong>
+        <small>${reviewNotes} hand notes / ${decisionReviews} decisions</small>
+      </div>
+    </div>
+    <p class="workspace-health-note">${escapeHtml(
+      attentionItems.length
+        ? `Needs attention: ${attentionItems.join(", ")}.`
+        : "Data looks connected for the current workspace."
+    )}</p>
+  `;
 }
 
 function renderPlayerOptions() {
@@ -4310,6 +4541,7 @@ function render() {
   renderBankrollFilters();
   renderHomePeriodControls();
   renderMetrics();
+  renderWorkspaceHealth();
   renderPlayerOptions();
   renderSessionOptions();
   renderLiveSessionOptions();
@@ -4390,6 +4622,7 @@ async function refresh({ quiet = false } = {}) {
   state.bankrollSummary = bankrollSummaryPayload.summary;
   state.bankrollTransactions = bankrollTransactionsPayload.transactions;
   state.bankrollTransactionSummary = bankrollTransactionSummaryPayload.summary;
+  state.lastSyncedAt = new Date().toISOString();
 
   if (state.selectedHandId && !state.hands.some((hand) => hand.id === state.selectedHandId)) {
     state.selectedHandId = null;
@@ -4657,7 +4890,7 @@ async function handleHandDetailClick(event, container, { reviewMode = false } = 
       if (advance) {
         await advanceReviewAfter(hand.id);
       }
-      showToast(reviewed === true ? "Decision marked reviewed." : "Decision review saved.");
+      showToast(markWorkspaceSaved(reviewed === true ? "Decision marked reviewed" : "Decision review saved"));
     } catch (error) {
       showToast(error.message);
     }
@@ -4705,7 +4938,7 @@ async function handleHandDetailClick(event, container, { reviewMode = false } = 
       if (advance) {
         await advanceReviewAfter(payload.hand.id);
       }
-      showToast(reviewed === true ? "Hand marked reviewed." : reviewed === false ? "Hand reopened." : "Review saved.");
+      showToast(markWorkspaceSaved(reviewed === true ? "Hand marked reviewed" : reviewed === false ? "Hand reopened" : "Review saved"));
     } catch (error) {
       showToast(error.message);
     }
@@ -4822,6 +5055,7 @@ elements.homePeriodTabs.addEventListener("click", (event) => {
   renderMetrics();
   renderBankrollCharts();
   renderSessions();
+  renderWorkspaceHealth();
 });
 
 elements.livePlayerCount.addEventListener("click", (event) => {
@@ -4995,8 +5229,8 @@ elements.loadDemo.addEventListener("click", async () => {
       payload.duplicate
         ? "Sample was already loaded."
         : payload.import.status === "queued"
-          ? "Sample queued for parsing."
-          : `Loaded ${payload.import.handCount} sample hands.`
+          ? markWorkspaceSaved("Sample queued for parsing")
+          : markWorkspaceSaved(`Loaded ${payload.import.handCount} sample hands`)
     );
   } catch (error) {
     showToast(error.message);
@@ -5018,7 +5252,7 @@ elements.clearSession.addEventListener("click", async () => {
     const payload = await api("/api/session", { method: "DELETE" });
     state.selectedHandId = null;
     await refresh();
-    showToast(`Cleared ${payload.removedHands} hands.`);
+    showToast(markWorkspaceSaved(`Cleared ${payload.removedHands} hands`));
   } catch (error) {
     showToast(error.message);
   }
@@ -5046,17 +5280,21 @@ for (const control of elements.bankrollFilterControls) {
     renderMetrics();
     renderBankrollCharts();
     renderSessions();
+    renderWorkspaceHealth();
   });
 }
 
-elements.bankrollResetFilters.addEventListener("click", () => {
-  state.bankrollFilters = { ...emptyBankrollFilters };
-  renderBankrollFilters();
-  renderHomePeriodControls();
-  renderMetrics();
-  renderBankrollCharts();
-  renderSessions();
-});
+for (const resetButton of elements.bankrollResetFilters) {
+  resetButton.addEventListener("click", () => {
+    state.bankrollFilters = { ...emptyBankrollFilters };
+    renderBankrollFilters();
+    renderHomePeriodControls();
+    renderMetrics();
+    renderBankrollCharts();
+    renderSessions();
+    renderWorkspaceHealth();
+  });
+}
 
 elements.handPlayerFilter.addEventListener("input", renderHands);
 for (const filter of [
@@ -5231,7 +5469,7 @@ elements.importList.addEventListener("click", async (event) => {
       method: "DELETE"
     });
     await refresh();
-    showToast(`Deleted ${payload.removedHands} hands.`);
+    showToast(markWorkspaceSaved(`Deleted ${payload.removedHands} hands`));
   } catch (error) {
     showToast(error.message);
   }
@@ -5251,7 +5489,7 @@ elements.importList.addEventListener("change", async (event) => {
       }
     });
     await refresh();
-    showToast(`Linked ${payload.updatedHands} hands.`);
+    showToast(markWorkspaceSaved(`Linked ${payload.updatedHands} hands`));
   } catch (error) {
     showToast(error.message);
   }
@@ -5343,7 +5581,7 @@ elements.bankrollImportForm.addEventListener("submit", async (event) => {
     await refresh();
     renderBankrollImportPreview(payload);
     elements.bankrollImportStatus.textContent = bankrollImportSummary(payload);
-    showToast(bankrollImportSummary(payload));
+    showToast(markWorkspaceSaved(bankrollImportSummary(payload).replace(/\.$/, "")));
   } catch (error) {
     elements.bankrollImportStatus.textContent = error.message;
     showToast(error.message);
@@ -5379,7 +5617,7 @@ elements.bankrollForm.addEventListener("submit", async (event) => {
     state.selectedSessionId = payload.session.id;
     await refresh();
     fillBankrollForm(sessionById(state.selectedSessionId) ?? payload.session);
-    showToast(`${editingSessionId ? "Saved" : "Added"} ${formatCurrency(payload.session.profit, { signed: true })} session.`);
+    showToast(markWorkspaceSaved(`${editingSessionId ? "Saved" : "Added"} ${formatCurrency(payload.session.profit, { signed: true })} session`));
   } catch (error) {
     showToast(error.message);
   }
@@ -5401,7 +5639,7 @@ elements.sessionList.addEventListener("click", async (event) => {
         resetBankrollForm();
       }
       await refresh();
-      showToast(`Deleted ${formatCurrency(payload.session.profit, { signed: true })} session.`);
+      showToast(markWorkspaceSaved(`Deleted ${formatCurrency(payload.session.profit, { signed: true })} session`));
     } catch (error) {
       showToast(error.message);
     }
@@ -5453,7 +5691,7 @@ elements.transactionForm.addEventListener("submit", async (event) => {
     );
     await refresh();
     fillTransactionForm(transactionById(payload.transaction.id) ?? payload.transaction);
-    showToast(`${editingTransactionId ? "Saved" : "Added"} ${formatCurrency(payload.transaction.amount, { signed: true })} transaction.`);
+    showToast(markWorkspaceSaved(`${editingTransactionId ? "Saved" : "Added"} ${formatCurrency(payload.transaction.amount, { signed: true })} transaction`));
   } catch (error) {
     showToast(error.message);
   }
@@ -5474,7 +5712,7 @@ elements.transactionList.addEventListener("click", async (event) => {
       });
       await refresh();
       resetTransactionForm();
-      showToast(`Deleted ${formatCurrency(payload.transaction.amount, { signed: true })} transaction.`);
+      showToast(markWorkspaceSaved(`Deleted ${formatCurrency(payload.transaction.amount, { signed: true })} transaction`));
     } catch (error) {
       showToast(error.message);
     }
@@ -5552,7 +5790,7 @@ elements.liveForm.addEventListener("submit", async (event) => {
         loadDecisionReview(payload.hand.id)
       ]);
     }
-    showToast(payload.duplicate ? "Live hand was already saved." : "Live hand saved.");
+    showToast(payload.duplicate ? "Live hand was already saved." : markWorkspaceSaved("Live hand saved"));
   } catch (error) {
     showToast(error.message);
   }
@@ -5577,8 +5815,8 @@ elements.importForm.addEventListener("submit", async (event) => {
       payload.duplicate
         ? "That session is already imported."
         : payload.import.status === "queued"
-          ? "Upload queued for parsing."
-          : `Imported ${payload.import.handCount} hands.`
+          ? markWorkspaceSaved("Upload queued for parsing")
+          : markWorkspaceSaved(`Imported ${payload.import.handCount} hands`)
     );
   } catch (error) {
     showToast(error.message);

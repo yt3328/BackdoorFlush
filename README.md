@@ -4,7 +4,7 @@ Backdoor Flush is a small hand-history desk for reviewing poker sessions.
 
 The local app lets you upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, track bankroll sessions, and run quick equity checks.
 
-Version 1.9 adds a focused Review workspace for working through queued hands, saving notes, and moving to the next spot without leaving the flow.
+Version 2.0 adds clearer workspace status, account/local/demo save feedback, session-level filters, and a data-health view that shows how sessions, imports, linked hands, and review work fit together.
 
 ## Run it
 
@@ -35,6 +35,9 @@ Local mode:
 - Previews bankroll exports before import, including new sessions, ledger transactions, duplicates, and skipped rows.
 - Tracks bankroll transactions separately from poker-session results.
 - Shows bankroll progress, location-level session charts, and common Home periods such as 7D, 30D, 90D, YTD, and All.
+- Keeps Home and Sessions filters synchronized across date range, location, game type, stakes, and linked-hand review status.
+- Shows a workspace health strip for save mode, last activity, ready/queued/failed imports, linked hands, and review coverage.
+- Labels demo data as temporary, local data as saved on the computer, and cloud data as saved to the signed-in account.
 - Links imports to bankroll sessions when uploading, from the import log, or through the sample loader.
 - Saves live-entered hands from a structured builder with seats, cards, actions, winners, and session links.
 - Offers a read-only demo workspace that stays separate from a signed-in user's real data.
@@ -132,7 +135,7 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 ## Next
 
 - Support more hand-history formats and larger real-world exports.
-- Add richer filters inside the session detail view.
+- Add deeper linked-hand filters inside the selected session detail.
 - Add CSV/JSON exports for bankroll sessions and ledger transactions.
 - Add decision review exports for selected sessions.
 - Replace the first-pass decision flags with a larger recommendation engine.

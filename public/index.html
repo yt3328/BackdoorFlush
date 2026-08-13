@@ -149,7 +149,7 @@
           </div>
           <div class="toolbar">
             <div class="account">
-              <span id="auth-status">Local mode</span>
+              <span id="auth-status" class="mode-badge">Local mode</span>
               <button id="sign-in" class="button secondary" type="button" hidden>Sign in</button>
               <button id="sign-out" class="button ghost" type="button" hidden>Sign out</button>
             </div>
@@ -167,10 +167,12 @@
         <section id="demo-banner" class="demo-banner" hidden>
           <div>
             <strong>Demo Mode</strong>
-            <span>This workspace is temporary and separate from your real account.</span>
+            <span>This workspace is temporary; refreshing or exiting clears demo changes.</span>
           </div>
           <button id="exit-demo" class="button secondary" type="button">Exit Demo</button>
         </section>
+
+        <section id="workspace-health" class="workspace-health" aria-label="Workspace data status"></section>
 
         <section class="view active" id="view-overview">
           <section class="panel home-summary" aria-labelledby="home-period-title">
@@ -268,7 +270,7 @@
           <section class="panel bankroll-filter-panel" aria-labelledby="bankroll-filter-title">
             <div class="panel-head filter-head">
               <h3 id="bankroll-filter-title">Detailed Filters</h3>
-              <button id="bankroll-reset-filters" class="button secondary" type="button">Reset</button>
+              <button id="bankroll-reset-filters" class="button secondary" type="button" data-bankroll-reset-filters>Reset</button>
             </div>
             <div class="bankroll-filters">
               <label>
@@ -297,8 +299,18 @@
                   <option value="">All stakes</option>
                 </select>
               </label>
+              <label>
+                Review status
+                <select data-bankroll-filter="reviewStatus" aria-label="Bankroll review status filter">
+                  <option value="">All review</option>
+                  <option value="open">Has open reviews</option>
+                  <option value="reviewed">All linked hands reviewed</option>
+                  <option value="linked">Has linked hands</option>
+                  <option value="unlinked">No linked hands</option>
+                </select>
+              </label>
             </div>
-            <div id="bankroll-filter-summary" class="filter-summary"></div>
+            <div id="bankroll-filter-summary" class="filter-summary" data-bankroll-filter-summary></div>
           </section>
 
           <section class="sample-context-block">
@@ -462,6 +474,55 @@
         </section>
 
         <section class="view" id="view-sessions">
+          <section class="panel session-filter-panel" aria-labelledby="session-filter-title">
+            <div class="panel-head filter-head">
+              <div>
+                <h3 id="session-filter-title">Session Filters</h3>
+                <p class="panel-note">Use the same date, location, game, and stakes scope for the session list and detail.</p>
+              </div>
+              <button class="button secondary" type="button" data-bankroll-reset-filters>Reset</button>
+            </div>
+            <div class="bankroll-filters">
+              <label>
+                Start date
+                <input data-bankroll-filter="startDate" type="date">
+              </label>
+              <label>
+                End date
+                <input data-bankroll-filter="endDate" type="date">
+              </label>
+              <label>
+                Location
+                <select data-bankroll-filter="location" aria-label="Session location filter">
+                  <option value="">All locations</option>
+                </select>
+              </label>
+              <label>
+                Game type
+                <select data-bankroll-filter="gameType" aria-label="Session game type filter">
+                  <option value="">All games</option>
+                </select>
+              </label>
+              <label>
+                Stakes
+                <select data-bankroll-filter="stakes" aria-label="Session stakes filter">
+                  <option value="">All stakes</option>
+                </select>
+              </label>
+              <label>
+                Review status
+                <select data-bankroll-filter="reviewStatus" aria-label="Session review status filter">
+                  <option value="">All review</option>
+                  <option value="open">Has open reviews</option>
+                  <option value="reviewed">All linked hands reviewed</option>
+                  <option value="linked">Has linked hands</option>
+                  <option value="unlinked">No linked hands</option>
+                </select>
+              </label>
+            </div>
+            <div class="filter-summary" data-bankroll-filter-summary></div>
+          </section>
+
           <div class="split sessions-workspace">
             <div class="session-tools">
               <section class="panel">
