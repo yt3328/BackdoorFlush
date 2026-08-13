@@ -97,6 +97,18 @@ Bankroll sessions include:
 - `startedAt`
 - `endedAt`
 
+Bankroll transactions include:
+
+- `userId`
+- `transactionId`
+- `date`
+- `type`
+- `amount`
+- `bankrollName`
+- `note`
+- `externalKey`
+- `importSource`
+
 Imports include:
 
 - `userId`

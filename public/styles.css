@@ -446,7 +446,8 @@ th {
 .leak-list,
 .hand-list,
 .import-list,
-.session-list {
+.session-list,
+.transaction-list {
   display: grid;
   gap: 10px;
   padding: 16px;
@@ -456,7 +457,8 @@ th {
 .review-spot,
 .hand,
 .import-row,
-.session-row {
+.session-row,
+.transaction-row {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
@@ -514,18 +516,21 @@ th {
   flex-wrap: wrap;
 }
 
-.session-row {
+.session-row,
+.transaction-row {
   transition: border-color 140ms ease, box-shadow 140ms ease;
 }
 
 .session-row:hover,
-.session-row.active {
+.session-row.active,
+.transaction-row:hover {
   border-color: var(--felt);
   box-shadow: 0 0 0 3px rgba(15, 107, 79, 0.1);
 }
 
 .import-row,
-.session-row {
+.session-row,
+.transaction-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -560,7 +565,8 @@ th {
 .leak p,
 .hand p,
 .import-row p,
-.session-row p {
+.session-row p,
+.transaction-row p {
   margin: 0;
   color: var(--muted);
   line-height: 1.45;
@@ -1033,7 +1039,7 @@ button.tag-chip.active,
 
 .session-kpis {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
   gap: 10px;
 }
 
@@ -1100,6 +1106,51 @@ button.tag-chip.active,
 
 .import-status {
   min-height: 20px;
+}
+
+.import-preview {
+  display: grid;
+  gap: 12px;
+}
+
+.import-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 8px;
+}
+
+.import-preview-grid div,
+.preview-lists > div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.import-preview-grid strong {
+  display: block;
+  font-size: 1.08rem;
+  margin-top: 4px;
+}
+
+.preview-lists {
+  display: grid;
+  gap: 8px;
+}
+
+.preview-lists h4,
+.preview-lists p {
+  margin: 0;
+}
+
+.preview-lists h4 {
+  font-size: 0.88rem;
+  margin-bottom: 6px;
+}
+
+.preview-lists p {
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .linked-hand {
@@ -1621,7 +1672,8 @@ button.tag-chip.active,
   }
 
   .import-row,
-  .session-row {
+  .session-row,
+  .transaction-row {
     align-items: stretch;
     flex-direction: column;
   }

@@ -4,7 +4,8 @@ import { mkdirSync } from "node:fs";
 import { buildDecisionBreakdown, buildStudyPlan, normalizeDecisionReviewPatch } from "../core/decisionReview.js";
 import { buildReviewQueue, normalizeReviewPatch } from "../core/handReview.js";
 import { handKey, hashText } from "../core/importIdentity.js";
-import { parseBankrollImport } from "../core/bankrollImport.js";
+import { parseBankrollImport, planBankrollImport } from "../core/bankrollImport.js";
+import { buildBankrollTransaction, summarizeBankrollTransactions } from "../core/bankrollTransactions.js";
 import { buildLiveHand } from "../core/liveHandBuilder.js";
 import { buildSessionDetail } from "../core/sessionInsights.js";
 import { buildBankrollSession, summarizeBankrollSessions } from "../core/sessionTracker.js";
@@ -14,7 +15,8 @@ function emptyState() {
   return {
     imports: [],
     hands: [],
-    bankrollSessions: []
+    bankrollSessions: [],
+    bankrollTransactions: []
   };
 }
 
@@ -24,6 +26,10 @@ function createId(prefix) {
 
 function bankrollSessionKey(session) {
   return session.externalKey || "";
+}
+
+function bankrollTransactionKey(transaction) {
+  return transaction.externalKey || "";
 }
 
 export class HandStore {
@@ -48,7 +54,8 @@ export class HandStore {
         decisionReviews: hand.decisionReviews && typeof hand.decisionReviews === "object" ? hand.decisionReviews : {},
         handKey: hand.handKey ?? handKey(hand)
       })) : [],
-      bankrollSessions: Array.isArray(state.bankrollSessions) ? state.bankrollSessions : []
+      bankrollSessions: Array.isArray(state.bankrollSessions) ? state.bankrollSessions : [],
+      bankrollTransactions: Array.isArray(state.bankrollTransactions) ? state.bankrollTransactions : []
     };
   }
 
@@ -307,7 +314,7 @@ export class HandStore {
     return session;
   }
 
-  importBankrollSessions(payload = {}) {
+  parseBankrollImportPlan(payload = {}) {
     const rawText = payload.rawText ?? payload.text ?? "";
     if (!String(rawText).trim()) {
       throw new Error("Paste or upload a bankroll export first.");
@@ -320,20 +327,25 @@ export class HandStore {
       defaultStakes: payload.defaultStakes
     });
     const existingKeys = new Set(this.state.bankrollSessions.map(bankrollSessionKey).filter(Boolean));
+    const existingTransactionKeys = new Set(this.state.bankrollTransactions.map(bankrollTransactionKey).filter(Boolean));
+
+    return planBankrollImport(parsed, {
+      existingSessionKeys: existingKeys,
+      existingTransactionKeys
+    });
+  }
+
+  previewBankrollImport(payload = {}) {
+    return this.parseBankrollImportPlan(payload);
+  }
+
+  importBankrollSessions(payload = {}) {
+    const plan = this.parseBankrollImportPlan(payload);
     const importedAt = new Date().toISOString();
     const sessions = [];
-    const duplicateRows = [];
+    const transactions = [];
 
-    for (const sessionPayload of parsed.sessions) {
-      if (sessionPayload.externalKey && existingKeys.has(sessionPayload.externalKey)) {
-        duplicateRows.push({
-          rowNumber: sessionPayload.importRowNumber,
-          section: "poker-session",
-          reason: "Session was already imported."
-        });
-        continue;
-      }
-
+    for (const sessionPayload of plan.sessions) {
       const id = createId("sess");
       const session = buildBankrollSession({
         ...sessionPayload,
@@ -345,28 +357,115 @@ export class HandStore {
       });
 
       sessions.push(session);
-      if (session.externalKey) {
-        existingKeys.add(session.externalKey);
-      }
     }
 
-    if (sessions.length > 0) {
+    for (const transactionPayload of plan.transactions) {
+      const id = createId("txn");
+      const transaction = buildBankrollTransaction({
+        ...transactionPayload,
+        importedAt
+      }, {
+        id,
+        createdAt: importedAt,
+        updatedAt: importedAt
+      });
+
+      transactions.push(transaction);
+    }
+
+    if (sessions.length > 0 || transactions.length > 0) {
       this.state.bankrollSessions = [...sessions, ...this.state.bankrollSessions];
+      this.state.bankrollTransactions = [...transactions, ...this.state.bankrollTransactions];
       this.save();
     }
 
-    const skippedRows = [...parsed.skippedRows, ...duplicateRows];
-
     return {
       importedCount: sessions.length,
-      parsedSessionCount: parsed.sessions.length,
-      skippedCount: skippedRows.length,
-      duplicateCount: duplicateRows.length,
-      parsedRowCount: parsed.parsedRowCount,
-      source: parsed.source,
+      importedSessionCount: sessions.length,
+      importedTransactionCount: transactions.length,
+      parsedSessionCount: plan.parsedSessionCount,
+      parsedTransactionCount: plan.parsedTransactionCount,
+      skippedCount: plan.skippedCount,
+      duplicateCount: plan.duplicateCount,
+      duplicateSessionCount: plan.duplicateSessionCount,
+      duplicateTransactionCount: plan.duplicateTransactionCount,
+      parsedRowCount: plan.parsedRowCount,
+      source: plan.source,
       sessions,
-      skippedRows: skippedRows.slice(0, 50)
+      transactions,
+      skippedRows: plan.skippedRows
     };
+  }
+
+  listBankrollTransactions() {
+    return [...this.state.bankrollTransactions].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  }
+
+  getBankrollTransaction(id) {
+    return this.state.bankrollTransactions.find(
+      (transaction) => transaction.id === id || transaction.transactionId === id
+    ) ?? null;
+  }
+
+  createBankrollTransaction(payload) {
+    const id = createId("txn");
+    const transaction = buildBankrollTransaction(payload, {
+      id
+    });
+
+    this.state.bankrollTransactions.unshift(transaction);
+    this.save();
+
+    return transaction;
+  }
+
+  updateBankrollTransaction(id, payload) {
+    const existingTransaction = this.getBankrollTransaction(id);
+
+    if (!existingTransaction) {
+      throw new Error("Bankroll transaction not found.");
+    }
+
+    const updatedTransaction = buildBankrollTransaction({
+      ...existingTransaction,
+      ...payload,
+      id: existingTransaction.id,
+      transactionId: existingTransaction.transactionId
+    }, {
+      id: existingTransaction.transactionId ?? existingTransaction.id,
+      createdAt: existingTransaction.createdAt,
+      updatedAt: new Date().toISOString()
+    });
+
+    this.state.bankrollTransactions = this.state.bankrollTransactions.map((transaction) =>
+      transaction.id === existingTransaction.id || transaction.transactionId === existingTransaction.transactionId
+        ? updatedTransaction
+        : transaction
+    );
+    this.save();
+
+    return updatedTransaction;
+  }
+
+  deleteBankrollTransaction(id) {
+    const existingTransaction = this.getBankrollTransaction(id);
+
+    if (!existingTransaction) {
+      throw new Error("Bankroll transaction not found.");
+    }
+
+    this.state.bankrollTransactions = this.state.bankrollTransactions.filter(
+      (transaction) => transaction.id !== id && transaction.transactionId !== id
+    );
+    this.save();
+
+    return {
+      transaction: existingTransaction
+    };
+  }
+
+  bankrollTransactionSummary() {
+    return summarizeBankrollTransactions(this.state.bankrollTransactions);
   }
 
   updateBankrollSession(id, payload) {

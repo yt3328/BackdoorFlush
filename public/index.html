@@ -274,11 +274,55 @@
                     <textarea name="rawText" rows="8"></textarea>
                   </label>
                   <div class="form-actions">
+                    <button id="preview-bankroll-import" class="button secondary" type="button">Preview</button>
                     <button class="button" type="submit">Import Sessions</button>
                     <button id="clear-bankroll-import" class="button secondary" type="button">Clear Text</button>
                   </div>
+                  <div id="bankroll-import-preview" class="import-preview"></div>
                   <div id="bankroll-import-status" class="import-status muted-line"></div>
                 </form>
+              </section>
+
+              <section class="panel">
+                <div class="panel-head">
+                  <h3 id="bankroll-transaction-form-title">Transaction Ledger</h3>
+                </div>
+                <form id="bankroll-transaction-form" class="form transaction-form">
+                  <div class="form-grid">
+                    <label>
+                      Date
+                      <input name="date" type="date">
+                    </label>
+                    <label>
+                      Type
+                      <select name="type">
+                        <option value="deposit">Deposit</option>
+                        <option value="withdrawal">Withdrawal</option>
+                        <option value="transfer">Transfer</option>
+                        <option value="initial">Initial bankroll</option>
+                        <option value="adjustment">Adjustment</option>
+                      </select>
+                    </label>
+                    <label>
+                      Amount
+                      <input name="amount" value="" inputmode="decimal">
+                    </label>
+                    <label>
+                      Bankroll
+                      <input name="bankrollName" value="Default" autocomplete="off">
+                    </label>
+                  </div>
+                  <label>
+                    Note
+                    <textarea name="note" rows="3"></textarea>
+                  </label>
+                  <div class="form-actions">
+                    <button id="bankroll-transaction-submit" class="button" type="submit">Add Transaction</button>
+                    <button id="bankroll-transaction-cancel" class="button secondary" type="button" hidden>New Transaction</button>
+                  </div>
+                </form>
+                <div id="transaction-summary" class="session-summary"></div>
+                <div id="transaction-list" class="transaction-list"></div>
               </section>
             </div>
 

@@ -219,6 +219,70 @@ function importedSessionKey(record, fallbackParts, sessionType) {
   return `bankroll-session:${type}:${hashText(fallbackParts.join("|")).slice(0, 24)}`;
 }
 
+function importedTransactionKey(record, fallbackParts, context) {
+  const bankroll = pick(record, ["Bankroll", "Bankroll Name"]) || context.bankrollName || "default";
+  return `bankroll-transaction:${normalizeKey(bankroll)}:${hashText(fallbackParts.join("|")).slice(0, 24)}`;
+}
+
+function inferTransactionType(note, amount) {
+  const key = normalizeKey(note);
+
+  if (key.includes("initial")) {
+    return "initial";
+  }
+
+  if (key.includes("withdraw")) {
+    return "withdrawal";
+  }
+
+  if (key.includes("transfer")) {
+    return "transfer";
+  }
+
+  if (key.includes("deposit") || key.includes("add")) {
+    return "deposit";
+  }
+
+  return Number(amount) < 0 ? "withdrawal" : "deposit";
+}
+
+function transactionFromRecord(record, context) {
+  const transactionDateText = pick(record, ["Transaction Date", "Date", "Created At"]);
+  const updateDateText = pick(record, ["Update Date", "Updated At"]);
+  const amount = parseMoney(pick(record, ["Amount", "Transaction Amount", "Net"]));
+  const date = parseDate(transactionDateText) || parseDate(updateDateText);
+
+  if (!date || amount === null) {
+    return {
+      skipped: "Transaction row is missing date or amount."
+    };
+  }
+
+  const note = pick(record, ["Note", "Notes", "Description"]);
+  const bankrollName = pick(record, ["Bankroll", "Bankroll Name"]) || context.bankrollName;
+  const transaction = {
+    date,
+    amount,
+    type: inferTransactionType(note, amount),
+    note,
+    bankrollName,
+    importSource: context.source,
+    transactionAt: parseDateTime(transactionDateText),
+    sourceUpdatedAt: parseDateTime(updateDateText)
+  };
+  transaction.externalKey = importedTransactionKey(record, [
+    transactionDateText,
+    updateDateText,
+    bankrollName,
+    amount,
+    note
+  ], context);
+
+  return {
+    transaction
+  };
+}
+
 function pokerSessionFromRecord(record, context) {
   const state = pick(record, ["State", "Status"]);
   if (!completedStates.has(normalizeKey(state))) {
@@ -350,6 +414,7 @@ function genericSessionFromRecord(record, context) {
 export function parseBankrollImport(rawText, options = {}) {
   const rows = parseCsvRows(rawText);
   const sessions = [];
+  const transactions = [];
   const skippedRows = [];
   const context = {
     source: cleanText(options.source) || "bankroll-export",
@@ -405,12 +470,20 @@ export function parseBankrollImport(rawText, options = {}) {
     const record = rowToRecord(header, row);
 
     if (kind === "transaction") {
-      skippedRows.push({
-        rowNumber,
-        section: "transactions",
-        reason: "Bankroll transaction rows are not poker sessions.",
-        amount: parseMoney(pick(record, ["Amount"]))
-      });
+      const result = transactionFromRecord(record, context);
+
+      if (result.transaction) {
+        transactions.push({
+          ...result.transaction,
+          importRowNumber: rowNumber
+        });
+      } else {
+        skippedRows.push({
+          rowNumber,
+          section: "transactions",
+          reason: result.skipped ?? "Transaction row could not be imported."
+        });
+      }
       return;
     }
 
@@ -435,8 +508,64 @@ export function parseBankrollImport(rawText, options = {}) {
 
   return {
     sessions,
+    transactions,
     skippedRows,
     parsedRowCount: rows.length,
     source: context.source
+  };
+}
+
+export function planBankrollImport(parsed, {
+  existingSessionKeys = new Set(),
+  existingTransactionKeys = new Set()
+} = {}) {
+  const sessions = [];
+  const transactions = [];
+  const duplicateRows = [];
+  let duplicateSessionCount = 0;
+  let duplicateTransactionCount = 0;
+
+  for (const session of parsed.sessions ?? []) {
+    if (session.externalKey && existingSessionKeys.has(session.externalKey)) {
+      duplicateSessionCount += 1;
+      duplicateRows.push({
+        rowNumber: session.importRowNumber,
+        section: "poker-session",
+        reason: "Session was already imported."
+      });
+    } else {
+      sessions.push(session);
+    }
+  }
+
+  for (const transaction of parsed.transactions ?? []) {
+    if (transaction.externalKey && existingTransactionKeys.has(transaction.externalKey)) {
+      duplicateTransactionCount += 1;
+      duplicateRows.push({
+        rowNumber: transaction.importRowNumber,
+        section: "transactions",
+        reason: "Transaction was already imported."
+      });
+    } else {
+      transactions.push(transaction);
+    }
+  }
+
+  const skippedRows = [...(parsed.skippedRows ?? []), ...duplicateRows];
+
+  return {
+    source: parsed.source,
+    parsedRowCount: parsed.parsedRowCount,
+    parsedSessionCount: parsed.sessions?.length ?? 0,
+    parsedTransactionCount: parsed.transactions?.length ?? 0,
+    readySessionCount: sessions.length,
+    readyTransactionCount: transactions.length,
+    duplicateCount: duplicateRows.length,
+    duplicateSessionCount,
+    duplicateTransactionCount,
+    skippedCount: skippedRows.length,
+    sessions,
+    transactions,
+    skippedRows: skippedRows.slice(0, 50)
   };
 }

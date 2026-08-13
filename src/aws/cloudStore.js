@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { buildDecisionBreakdown, buildStudyPlan, normalizeDecisionReviewPatch } from "../core/decisionReview.js";
 import { buildReviewQueue, normalizeReviewPatch } from "../core/handReview.js";
 import { handKey, hashText } from "../core/importIdentity.js";
-import { parseBankrollImport } from "../core/bankrollImport.js";
+import { parseBankrollImport, planBankrollImport } from "../core/bankrollImport.js";
+import { buildBankrollTransaction, summarizeBankrollTransactions } from "../core/bankrollTransactions.js";
 import { buildLiveHand } from "../core/liveHandBuilder.js";
 import { buildSessionDetail } from "../core/sessionInsights.js";
 import { buildBankrollSession, summarizeBankrollSessions } from "../core/sessionTracker.js";
@@ -69,8 +70,21 @@ function publicBankrollSession(item) {
   };
 }
 
+function publicBankrollTransaction(item) {
+  const { userId, sessionId, ...rest } = item;
+  return {
+    ...rest,
+    id: item.transactionId ?? sessionId,
+    transactionId: item.transactionId ?? sessionId
+  };
+}
+
 function bankrollSessionKey(session) {
   return session.externalKey || "";
+}
+
+function bankrollTransactionKey(transaction) {
+  return transaction.externalKey || "";
 }
 
 async function batchWriteAll(dynamo, sdk, requestItems) {
@@ -613,6 +627,7 @@ export class CloudHandStore {
     } while (exclusiveStartKey);
 
     return items
+      .filter((item) => item.entityType !== "bankroll-transaction")
       .map(publicBankrollSession)
       .sort((a, b) => String(b.date).localeCompare(String(a.date)));
   }
@@ -626,6 +641,7 @@ export class CloudHandStore {
     const storedSession = {
       ...session,
       id: undefined,
+      entityType: "bankroll-session",
       userId: this.userId,
       sessionId
     };
@@ -639,8 +655,7 @@ export class CloudHandStore {
     return publicBankrollSession(storedSession);
   }
 
-  async importBankrollSessions(payload = {}) {
-    const { dynamo, sdk } = this.clients;
+  async parseBankrollImportPlan(payload = {}) {
     const rawText = payload.rawText ?? payload.text ?? "";
     if (!String(rawText).trim()) {
       throw new Error("Paste or upload a bankroll export first.");
@@ -652,22 +667,31 @@ export class CloudHandStore {
       defaultLocation: payload.defaultLocation,
       defaultStakes: payload.defaultStakes
     });
-    const existingSessions = await this.listBankrollSessions();
+    const [existingSessions, existingTransactions] = await Promise.all([
+      this.listBankrollSessions(),
+      this.listBankrollTransactions()
+    ]);
     const existingKeys = new Set(existingSessions.map(bankrollSessionKey).filter(Boolean));
+    const existingTransactionKeys = new Set(existingTransactions.map(bankrollTransactionKey).filter(Boolean));
+
+    return planBankrollImport(parsed, {
+      existingSessionKeys: existingKeys,
+      existingTransactionKeys
+    });
+  }
+
+  async previewBankrollImport(payload = {}) {
+    return this.parseBankrollImportPlan(payload);
+  }
+
+  async importBankrollSessions(payload = {}) {
+    const { dynamo, sdk } = this.clients;
+    const plan = await this.parseBankrollImportPlan(payload);
     const importedAt = new Date().toISOString();
     const storedSessions = [];
-    const duplicateRows = [];
+    const storedTransactions = [];
 
-    for (const sessionPayload of parsed.sessions) {
-      if (sessionPayload.externalKey && existingKeys.has(sessionPayload.externalKey)) {
-        duplicateRows.push({
-          rowNumber: sessionPayload.importRowNumber,
-          section: "poker-session",
-          reason: "Session was already imported."
-        });
-        continue;
-      }
-
+    for (const sessionPayload of plan.sessions) {
       const sessionId = createId("sess");
       const session = buildBankrollSession({
         ...sessionPayload,
@@ -680,19 +704,39 @@ export class CloudHandStore {
       const storedSession = {
         ...session,
         id: undefined,
+        entityType: "bankroll-session",
         userId: this.userId,
         sessionId
       };
 
       storedSessions.push(storedSession);
-      if (session.externalKey) {
-        existingKeys.add(session.externalKey);
-      }
     }
 
-    const writeRequests = storedSessions.map((session) => ({
+    for (const transactionPayload of plan.transactions) {
+      const transactionId = createId("txn");
+      const transaction = buildBankrollTransaction({
+        ...transactionPayload,
+        importedAt
+      }, {
+        id: transactionId,
+        createdAt: importedAt,
+        updatedAt: importedAt
+      });
+      const storedTransaction = {
+        ...transaction,
+        id: undefined,
+        entityType: "bankroll-transaction",
+        userId: this.userId,
+        sessionId: transactionId,
+        transactionId
+      };
+
+      storedTransactions.push(storedTransaction);
+    }
+
+    const writeRequests = [...storedSessions, ...storedTransactions].map((item) => ({
       PutRequest: {
-        Item: session
+        Item: item
       }
     }));
 
@@ -702,18 +746,143 @@ export class CloudHandStore {
       });
     }
 
-    const skippedRows = [...parsed.skippedRows, ...duplicateRows];
-
     return {
       importedCount: storedSessions.length,
-      parsedSessionCount: parsed.sessions.length,
-      skippedCount: skippedRows.length,
-      duplicateCount: duplicateRows.length,
-      parsedRowCount: parsed.parsedRowCount,
-      source: parsed.source,
+      importedSessionCount: storedSessions.length,
+      importedTransactionCount: storedTransactions.length,
+      parsedSessionCount: plan.parsedSessionCount,
+      parsedTransactionCount: plan.parsedTransactionCount,
+      skippedCount: plan.skippedCount,
+      duplicateCount: plan.duplicateCount,
+      duplicateSessionCount: plan.duplicateSessionCount,
+      duplicateTransactionCount: plan.duplicateTransactionCount,
+      parsedRowCount: plan.parsedRowCount,
+      source: plan.source,
       sessions: storedSessions.map(publicBankrollSession),
-      skippedRows: skippedRows.slice(0, 50)
+      transactions: storedTransactions.map(publicBankrollTransaction),
+      skippedRows: plan.skippedRows
     };
+  }
+
+  async listBankrollTransactions() {
+    const { dynamo, sdk } = this.clients;
+    const items = [];
+    let exclusiveStartKey;
+
+    do {
+      const result = await dynamo.send(new sdk.QueryCommand({
+        TableName: this.sessionsTable,
+        KeyConditionExpression: "userId = :userId",
+        ExpressionAttributeValues: {
+          ":userId": this.userId
+        },
+        ExclusiveStartKey: exclusiveStartKey
+      }));
+
+      items.push(...(result.Items ?? []));
+      exclusiveStartKey = result.LastEvaluatedKey;
+    } while (exclusiveStartKey);
+
+    return items
+      .filter((item) => item.entityType === "bankroll-transaction")
+      .map(publicBankrollTransaction)
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  }
+
+  async getBankrollTransaction(transactionId) {
+    const { dynamo, sdk } = this.clients;
+    const result = await dynamo.send(new sdk.GetCommand({
+      TableName: this.sessionsTable,
+      Key: {
+        userId: this.userId,
+        sessionId: transactionId
+      }
+    }));
+
+    return result.Item?.entityType === "bankroll-transaction" ? publicBankrollTransaction(result.Item) : null;
+  }
+
+  async createBankrollTransaction(payload) {
+    const { dynamo, sdk } = this.clients;
+    const transactionId = createId("txn");
+    const transaction = buildBankrollTransaction(payload, {
+      id: transactionId
+    });
+    const storedTransaction = {
+      ...transaction,
+      id: undefined,
+      entityType: "bankroll-transaction",
+      userId: this.userId,
+      sessionId: transactionId,
+      transactionId
+    };
+
+    await dynamo.send(new sdk.PutCommand({
+      TableName: this.sessionsTable,
+      Item: storedTransaction,
+      ConditionExpression: "attribute_not_exists(userId) AND attribute_not_exists(sessionId)"
+    }));
+
+    return publicBankrollTransaction(storedTransaction);
+  }
+
+  async updateBankrollTransaction(transactionId, payload) {
+    const { dynamo, sdk } = this.clients;
+    const existingTransaction = await this.getBankrollTransaction(transactionId);
+
+    if (!existingTransaction) {
+      throw new Error("Bankroll transaction not found.");
+    }
+
+    const updatedTransaction = buildBankrollTransaction({
+      ...existingTransaction,
+      ...payload,
+      transactionId
+    }, {
+      id: transactionId,
+      createdAt: existingTransaction.createdAt,
+      updatedAt: new Date().toISOString()
+    });
+    const storedTransaction = {
+      ...updatedTransaction,
+      id: undefined,
+      entityType: "bankroll-transaction",
+      userId: this.userId,
+      sessionId: transactionId,
+      transactionId
+    };
+
+    await dynamo.send(new sdk.PutCommand({
+      TableName: this.sessionsTable,
+      Item: storedTransaction
+    }));
+
+    return publicBankrollTransaction(storedTransaction);
+  }
+
+  async deleteBankrollTransaction(transactionId) {
+    const { dynamo, sdk } = this.clients;
+    const existingTransaction = await this.getBankrollTransaction(transactionId);
+
+    if (!existingTransaction) {
+      throw new Error("Bankroll transaction not found.");
+    }
+
+    await dynamo.send(new sdk.DeleteCommand({
+      TableName: this.sessionsTable,
+      Key: {
+        userId: this.userId,
+        sessionId: transactionId
+      }
+    }));
+
+    return {
+      transaction: existingTransaction
+    };
+  }
+
+  async bankrollTransactionSummary() {
+    return summarizeBankrollTransactions(await this.listBankrollTransactions());
   }
 
   async getBankrollSession(sessionId) {
@@ -749,6 +918,7 @@ export class CloudHandStore {
     const storedSession = {
       ...updatedSession,
       id: undefined,
+      entityType: "bankroll-session",
       userId: this.userId,
       sessionId
     };

@@ -51,6 +51,11 @@ function bankrollSessionIdFromPath(pathname) {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+function bankrollTransactionIdFromPath(pathname) {
+  const match = pathname.match(/^\/api\/bankroll\/transactions\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 function reviewedParam(value) {
   return value === "true" || value === "false" ? value : null;
 }
@@ -320,10 +325,52 @@ export function createHttpServer({ store }) {
         return;
       }
 
+      if (requestUrl.pathname === "/api/bankroll/imports/preview" && request.method === "POST") {
+        const payload = await readJsonBody(request);
+        sendJson(response, 200, store.previewBankrollImport(payload));
+        return;
+      }
+
       if (requestUrl.pathname === "/api/bankroll/imports" && request.method === "POST") {
         const payload = await readJsonBody(request);
         const result = store.importBankrollSessions(payload);
-        sendJson(response, result.importedCount > 0 ? 201 : 200, result);
+        sendJson(response, result.importedCount > 0 || result.importedTransactionCount > 0 ? 201 : 200, result);
+        return;
+      }
+
+      if (requestUrl.pathname === "/api/bankroll/transactions" && request.method === "GET") {
+        sendJson(response, 200, {
+          transactions: store.listBankrollTransactions()
+        });
+        return;
+      }
+
+      if (requestUrl.pathname === "/api/bankroll/transactions" && request.method === "POST") {
+        const payload = await readJsonBody(request);
+        sendJson(response, 201, {
+          transaction: store.createBankrollTransaction(payload)
+        });
+        return;
+      }
+
+      if (requestUrl.pathname === "/api/bankroll/transactions/summary" && request.method === "GET") {
+        sendJson(response, 200, {
+          summary: store.bankrollTransactionSummary()
+        });
+        return;
+      }
+
+      const bankrollTransactionId = bankrollTransactionIdFromPath(requestUrl.pathname);
+      if (bankrollTransactionId && request.method === "PATCH") {
+        const payload = await readJsonBody(request);
+        sendJson(response, 200, {
+          transaction: store.updateBankrollTransaction(bankrollTransactionId, payload)
+        });
+        return;
+      }
+
+      if (bankrollTransactionId && request.method === "DELETE") {
+        sendJson(response, 200, store.deleteBankrollTransaction(bankrollTransactionId));
         return;
       }
 

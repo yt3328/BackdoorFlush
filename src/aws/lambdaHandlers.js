@@ -49,6 +49,11 @@ function bankrollSessionIdFromPath(pathname) {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+function bankrollTransactionIdFromPath(pathname) {
+  const match = pathname.match(/^\/api\/bankroll\/transactions\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 function reviewedParam(value) {
   return value === "true" || value === "false" ? value : null;
 }
@@ -282,9 +287,42 @@ export async function api(event) {
       });
     }
 
+    if (pathname === "/api/bankroll/imports/preview" && method === "POST") {
+      return jsonResponse(200, await store.previewBankrollImport(eventBody(event)));
+    }
+
     if (pathname === "/api/bankroll/imports" && method === "POST") {
       const result = await store.importBankrollSessions(eventBody(event));
-      return jsonResponse(result.importedCount > 0 ? 201 : 200, result);
+      return jsonResponse(result.importedCount > 0 || result.importedTransactionCount > 0 ? 201 : 200, result);
+    }
+
+    if (pathname === "/api/bankroll/transactions" && method === "GET") {
+      return jsonResponse(200, {
+        transactions: await store.listBankrollTransactions()
+      });
+    }
+
+    if (pathname === "/api/bankroll/transactions" && method === "POST") {
+      return jsonResponse(201, {
+        transaction: await store.createBankrollTransaction(eventBody(event))
+      });
+    }
+
+    if (pathname === "/api/bankroll/transactions/summary" && method === "GET") {
+      return jsonResponse(200, {
+        summary: await store.bankrollTransactionSummary()
+      });
+    }
+
+    const bankrollTransactionId = bankrollTransactionIdFromPath(pathname);
+    if (bankrollTransactionId && method === "PATCH") {
+      return jsonResponse(200, {
+        transaction: await store.updateBankrollTransaction(bankrollTransactionId, eventBody(event))
+      });
+    }
+
+    if (bankrollTransactionId && method === "DELETE") {
+      return jsonResponse(200, await store.deleteBankrollTransaction(bankrollTransactionId));
     }
 
     const bankrollSessionId = bankrollSessionIdFromPath(pathname);

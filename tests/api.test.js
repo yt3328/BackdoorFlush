@@ -271,6 +271,15 @@ Cash Games
 "2026-08-08 21:22","2026-08-09 00:22","Sat","0","3:00","Texas Holdem","No Limit","Real Canadian","2000.00","0.00","-2000.00","","Casino","Completed","Default","0.00","362","2/5/10"
 "2026-08-07 20:30","2026-08-07 23:30","Fri","0","3:00","Texas Holdem","No Limit","Real Canadian","1500.00","1725.00","225.00","","Casino","Completed","Default","0.00","361","2/5/10"`;
 
+  const previewResponse = await dispatch({
+    method: "POST",
+    url: "/api/bankroll/imports/preview",
+    body: {
+      rawText,
+      source: "bankroll-csv"
+    }
+  });
+  const previewPayload = await previewResponse.json();
   const importResponse = await dispatch({
     method: "POST",
     url: "/api/bankroll/imports",
@@ -282,6 +291,10 @@ Cash Games
   const importPayload = await importResponse.json();
   const summaryResponse = await dispatch({ url: "/api/bankroll/summary" });
   const summaryPayload = await summaryResponse.json();
+  const transactionListResponse = await dispatch({ url: "/api/bankroll/transactions" });
+  const transactionListPayload = await transactionListResponse.json();
+  const transactionSummaryResponse = await dispatch({ url: "/api/bankroll/transactions/summary" });
+  const transactionSummaryPayload = await transactionSummaryResponse.json();
   const duplicateResponse = await dispatch({
     method: "POST",
     url: "/api/bankroll/imports",
@@ -292,17 +305,68 @@ Cash Games
   });
   const duplicatePayload = await duplicateResponse.json();
 
+  assert.equal(previewResponse.status, 200);
+  assert.equal(previewPayload.readySessionCount, 2);
+  assert.equal(previewPayload.readyTransactionCount, 2);
   assert.equal(importResponse.status, 201);
   assert.equal(importPayload.importedCount, 2);
-  assert.equal(importPayload.skippedCount, 2);
+  assert.equal(importPayload.importedTransactionCount, 2);
+  assert.equal(importPayload.skippedCount, 0);
   assert.equal(importPayload.sessions[0].location, "Real Canadian");
   assert.equal(importPayload.sessions[0].externalKey, "bankroll-session:cash:default:362");
+  assert.equal(importPayload.transactions[1].type, "initial");
   assert.equal(summaryPayload.summary.sessionCount, 2);
   assert.equal(summaryPayload.summary.totalProfit, -1775);
   assert.equal(summaryPayload.summary.totalHours, 6);
+  assert.equal(transactionListPayload.transactions.length, 2);
+  assert.equal(transactionSummaryPayload.summary.transactionCount, 2);
   assert.equal(duplicateResponse.status, 200);
   assert.equal(duplicatePayload.importedCount, 0);
-  assert.equal(duplicatePayload.duplicateCount, 2);
+  assert.equal(duplicatePayload.importedTransactionCount, 0);
+  assert.equal(duplicatePayload.duplicateCount, 4);
+});
+
+test("bankroll transaction endpoints create, update, summarize, and delete ledger entries", async () => {
+  const createResponse = await dispatch({
+    method: "POST",
+    url: "/api/bankroll/transactions",
+    body: {
+      date: "2026-08-13",
+      type: "deposit",
+      amount: 500,
+      bankrollName: "Default",
+      note: "Reload bankroll."
+    }
+  });
+  const createPayload = await createResponse.json();
+  const updateResponse = await dispatch({
+    method: "PATCH",
+    url: `/api/bankroll/transactions/${createPayload.transaction.id}`,
+    body: {
+      amount: 450,
+      note: "Corrected deposit."
+    }
+  });
+  const updatePayload = await updateResponse.json();
+  const listResponse = await dispatch({ url: "/api/bankroll/transactions" });
+  const listPayload = await listResponse.json();
+  const summaryResponse = await dispatch({ url: "/api/bankroll/transactions/summary" });
+  const summaryPayload = await summaryResponse.json();
+  const deleteResponse = await dispatch({
+    method: "DELETE",
+    url: `/api/bankroll/transactions/${createPayload.transaction.id}`
+  });
+  const deletePayload = await deleteResponse.json();
+
+  assert.equal(createResponse.status, 201);
+  assert.equal(createPayload.transaction.amount, 500);
+  assert.equal(updateResponse.status, 200);
+  assert.equal(updatePayload.transaction.amount, 450);
+  assert.equal(updatePayload.transaction.note, "Corrected deposit.");
+  assert.equal(listPayload.transactions.length, 1);
+  assert.equal(summaryPayload.summary.totalAmount, 450);
+  assert.equal(deleteResponse.status, 200);
+  assert.equal(deletePayload.transaction.id, createPayload.transaction.id);
 });
 
 test("imports can be linked to, moved between, and unlinked from bankroll sessions", async () => {

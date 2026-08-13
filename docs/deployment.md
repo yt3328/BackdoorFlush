@@ -1,6 +1,6 @@
 # Deployment
 
-Version 1.0 keeps the cloud sign-in and static frontend hosting from the earlier AWS version, then adds the decision review engine, per-decision notes/checklists, and study-plan prompts. The app presents itself as Backdoor Flush while keeping the existing AWS stack names and URLs. Local mode still works with `npm start`.
+Version 1.2 keeps the cloud sign-in and static frontend hosting from the earlier AWS version, then adds import previews and a bankroll transaction ledger alongside the existing session tracker and study tools. The app presents itself as Backdoor Flush while keeping the existing AWS stack names and URLs. Local mode still works with `npm start`.
 
 ## What Deploys
 

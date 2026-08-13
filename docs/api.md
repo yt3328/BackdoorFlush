@@ -206,6 +206,12 @@ Clears imported hand-history records and parsed hands. Bankroll records are pres
 ```http
 GET /api/bankroll/sessions
 POST /api/bankroll/sessions
+GET /api/bankroll/transactions
+POST /api/bankroll/transactions
+PATCH /api/bankroll/transactions/:id
+DELETE /api/bankroll/transactions/:id
+GET /api/bankroll/transactions/summary
+POST /api/bankroll/imports/preview
 POST /api/bankroll/imports
 GET /api/bankroll/sessions/:id
 PATCH /api/bankroll/sessions/:id
@@ -240,9 +246,25 @@ Import exported bankroll sessions:
 }
 ```
 
-The importer reads cash-game and tournament session rows with start/end time, play time, location, buy-in, cash-out, profit, bankroll, exported session id, and stake fields. Bankroll transaction rows such as deposits, withdrawals, and initial bankroll entries are returned in `skippedRows` because they are not poker sessions.
+`POST /api/bankroll/imports/preview` accepts the same payload and returns counts plus sample rows without saving anything.
+
+The importer reads cash-game and tournament session rows with start/end time, play time, location, buy-in, cash-out, profit, bankroll, exported session id, and stake fields. It also imports bankroll transaction rows such as deposits, withdrawals, transfers, and initial bankroll entries into the transaction ledger.
 
 Duplicate imports are skipped using the exported `SessionId` when available, or a deterministic row key when it is not.
+
+Create a bankroll transaction:
+
+```json
+{
+  "date": "2026-08-13",
+  "type": "deposit",
+  "amount": 500,
+  "bankrollName": "Default",
+  "note": "Reload bankroll."
+}
+```
+
+Transaction `type` can be `deposit`, `withdrawal`, `transfer`, `initial`, or `adjustment`.
 
 `GET /api/bankroll/sessions/:id` returns the session, linked imports, linked hands, player summaries, review signals, a small review queue, and the biggest estimated hero wins/losses for that session.
 

@@ -20,7 +20,11 @@ test("parses cash-game bankroll exports into sessions", () => {
   });
 
   assert.equal(parsed.sessions.length, 2);
-  assert.equal(parsed.skippedRows.length, 2);
+  assert.equal(parsed.transactions.length, 2);
+  assert.equal(parsed.skippedRows.length, 0);
+  assert.equal(parsed.transactions[0].type, "withdrawal");
+  assert.equal(parsed.transactions[1].type, "initial");
+  assert.equal(parsed.transactions[1].externalKey.startsWith("bankroll-transaction:default:"), true);
   assert.equal(parsed.sessions[0].date, "2026-08-08");
   assert.equal(parsed.sessions[0].location, "Real Canadian");
   assert.equal(parsed.sessions[0].hours, 3);

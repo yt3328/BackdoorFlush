@@ -43,12 +43,24 @@ const emptyBankrollSummary = {
   recentSessions: []
 };
 
+const emptyTransactionSummary = {
+  transactionCount: 0,
+  totalAmount: 0,
+  inflow: 0,
+  outflow: 0,
+  byType: [],
+  recentTransactions: []
+};
+
 const state = {
   view: "overview",
   hands: [],
   imports: [],
   bankrollSessions: [],
   bankrollSummary: emptyBankrollSummary,
+  bankrollTransactions: [],
+  bankrollTransactionSummary: emptyTransactionSummary,
+  bankrollImportPreview: null,
   players: [],
   leaks: [],
   reviewSpots: [],
@@ -107,8 +119,16 @@ const elements = {
   bankrollCancel: document.querySelector("#bankroll-cancel"),
   bankrollImportForm: document.querySelector("#bankroll-import-form"),
   bankrollImportFile: document.querySelector("#bankroll-import-file"),
+  previewBankrollImport: document.querySelector("#preview-bankroll-import"),
+  bankrollImportPreview: document.querySelector("#bankroll-import-preview"),
   bankrollImportStatus: document.querySelector("#bankroll-import-status"),
   clearBankrollImport: document.querySelector("#clear-bankroll-import"),
+  transactionForm: document.querySelector("#bankroll-transaction-form"),
+  transactionFormTitle: document.querySelector("#bankroll-transaction-form-title"),
+  transactionSubmit: document.querySelector("#bankroll-transaction-submit"),
+  transactionCancel: document.querySelector("#bankroll-transaction-cancel"),
+  transactionSummary: document.querySelector("#transaction-summary"),
+  transactionList: document.querySelector("#transaction-list"),
   sessionList: document.querySelector("#session-list"),
   sessionSummary: document.querySelector("#session-summary"),
   sessionDetail: document.querySelector("#session-detail"),
@@ -197,6 +217,9 @@ function clearDashboardData() {
   state.imports = [];
   state.bankrollSessions = [];
   state.bankrollSummary = emptyBankrollSummary;
+  state.bankrollTransactions = [];
+  state.bankrollTransactionSummary = emptyTransactionSummary;
+  state.bankrollImportPreview = null;
   state.players = [];
   state.leaks = [];
   state.reviewSpots = [];
@@ -329,6 +352,21 @@ function sessionId(session) {
 
 function sessionById(id) {
   return state.bankrollSessions.find((session) => sessionId(session) === id) ?? null;
+}
+
+function transactionId(transaction) {
+  return transaction?.transactionId ?? transaction?.id ?? "";
+}
+
+function transactionById(id) {
+  return state.bankrollTransactions.find((transaction) => transactionId(transaction) === id) ?? null;
+}
+
+function transactionTypeLabel(type) {
+  return String(type ?? "adjustment")
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function sessionLabel(session) {
@@ -884,12 +922,18 @@ function renderStudyPlan() {
 
 function renderSessionSummary() {
   const summary = state.bankrollSummary;
+  const transactionSummary = state.bankrollTransactionSummary;
+  const bankrollBalance = summary.totalProfit + transactionSummary.totalAmount;
 
   elements.sessionSummary.innerHTML = `
     <div class="session-kpis">
       <div>
-        <span class="subtle">Profit</span>
+        <span class="subtle">Session profit</span>
         <strong>${formatCurrency(summary.totalProfit, { signed: true })}</strong>
+      </div>
+      <div>
+        <span class="subtle">Bankroll balance</span>
+        <strong>${formatCurrency(bankrollBalance, { signed: true })}</strong>
       </div>
       <div>
         <span class="subtle">Hours</span>
@@ -907,6 +951,121 @@ function renderSessionSummary() {
   `;
 }
 
+function renderBankrollImportPreview(payload = state.bankrollImportPreview) {
+  if (!payload) {
+    elements.bankrollImportPreview.innerHTML = "";
+    return;
+  }
+
+  const sessions = payload.sessions ?? [];
+  const transactions = payload.transactions ?? [];
+  const skippedRows = payload.skippedRows ?? [];
+
+  elements.bankrollImportPreview.innerHTML = `
+    <div class="import-preview-grid">
+      <div>
+        <span class="subtle">Sessions ready</span>
+        <strong>${payload.readySessionCount ?? sessions.length}</strong>
+      </div>
+      <div>
+        <span class="subtle">Transactions ready</span>
+        <strong>${payload.readyTransactionCount ?? transactions.length}</strong>
+      </div>
+      <div>
+        <span class="subtle">Duplicates</span>
+        <strong>${payload.duplicateCount ?? 0}</strong>
+      </div>
+      <div>
+        <span class="subtle">Skipped rows</span>
+        <strong>${payload.skippedCount ?? 0}</strong>
+      </div>
+    </div>
+    <div class="preview-lists">
+      <div>
+        <h4>Sessions</h4>
+        ${
+          sessions.length
+            ? sessions.slice(0, 4).map((session) => `
+                <p>${escapeHtml(formatDate(session.date))} / ${escapeHtml(session.location)} / ${formatCurrency(session.profit, { signed: true })}</p>
+              `).join("")
+            : '<p class="muted-line">No new sessions found.</p>'
+        }
+      </div>
+      <div>
+        <h4>Transactions</h4>
+        ${
+          transactions.length
+            ? transactions.slice(0, 4).map((transaction) => `
+                <p>${escapeHtml(formatDate(transaction.date))} / ${escapeHtml(transactionTypeLabel(transaction.type))} / ${formatCurrency(transaction.amount, { signed: true })}</p>
+              `).join("")
+            : '<p class="muted-line">No new transactions found.</p>'
+        }
+      </div>
+      ${
+        skippedRows.length
+          ? `<div>
+              <h4>Skipped</h4>
+              ${skippedRows.slice(0, 3).map((row) => `<p>Row ${escapeHtml(row.rowNumber)} / ${escapeHtml(row.reason)}</p>`).join("")}
+            </div>`
+          : ""
+      }
+    </div>
+  `;
+}
+
+function renderTransactions() {
+  const summary = state.bankrollTransactionSummary;
+
+  elements.transactionSummary.innerHTML = `
+    <div class="session-kpis">
+      <div>
+        <span class="subtle">Ledger net</span>
+        <strong>${formatCurrency(summary.totalAmount, { signed: true })}</strong>
+      </div>
+      <div>
+        <span class="subtle">Inflow</span>
+        <strong>${formatCurrency(summary.inflow)}</strong>
+      </div>
+      <div>
+        <span class="subtle">Outflow</span>
+        <strong>${formatCurrency(summary.outflow)}</strong>
+      </div>
+      <div>
+        <span class="subtle">Entries</span>
+        <strong>${summary.transactionCount}</strong>
+      </div>
+    </div>
+  `;
+
+  if (state.bankrollTransactions.length === 0) {
+    elements.transactionList.innerHTML = '<div class="empty compact">No bankroll transactions yet.</div>';
+    return;
+  }
+
+  elements.transactionList.innerHTML = state.bankrollTransactions
+    .slice(0, 10)
+    .map((transaction) => {
+      const id = transactionId(transaction);
+      return `
+        <article class="transaction-row">
+          <div>
+            <div class="session-row-title">
+              <strong>${escapeHtml(transactionTypeLabel(transaction.type))}</strong>
+              <span class="pill">${formatCurrency(transaction.amount, { signed: true })}</span>
+            </div>
+            <p>${escapeHtml(formatDate(transaction.date))} / ${escapeHtml(transaction.bankrollName ?? "Default")}</p>
+            ${transaction.note ? `<p>${escapeHtml(transaction.note)}</p>` : ""}
+          </div>
+          <div class="row-actions">
+            <button class="button secondary" type="button" data-edit-bankroll-transaction="${escapeHtml(id)}">Edit</button>
+            <button class="button danger" type="button" data-delete-bankroll-transaction="${escapeHtml(id)}">Delete</button>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+}
+
 function resetBankrollForm() {
   elements.bankrollForm.reset();
   elements.bankrollForm.elements.date.value = new Date().toISOString().slice(0, 10);
@@ -922,6 +1081,29 @@ function resetBankrollForm() {
   elements.bankrollFormTitle.textContent = "New Session";
   elements.bankrollSubmit.textContent = "Add Session";
   elements.bankrollCancel.hidden = true;
+}
+
+function resetTransactionForm() {
+  elements.transactionForm.reset();
+  elements.transactionForm.elements.date.value = new Date().toISOString().slice(0, 10);
+  elements.transactionForm.elements.type.value = "deposit";
+  elements.transactionForm.elements.bankrollName.value = "Default";
+  elements.transactionForm.dataset.editingTransactionId = "";
+  elements.transactionFormTitle.textContent = "Transaction Ledger";
+  elements.transactionSubmit.textContent = "Add Transaction";
+  elements.transactionCancel.hidden = true;
+}
+
+function fillTransactionForm(transaction) {
+  elements.transactionForm.elements.date.value = transaction.date ?? "";
+  elements.transactionForm.elements.type.value = transaction.type ?? "adjustment";
+  elements.transactionForm.elements.amount.value = transaction.amount ?? "";
+  elements.transactionForm.elements.bankrollName.value = transaction.bankrollName ?? "Default";
+  elements.transactionForm.elements.note.value = transaction.note ?? "";
+  elements.transactionForm.dataset.editingTransactionId = transactionId(transaction);
+  elements.transactionFormTitle.textContent = "Edit Transaction";
+  elements.transactionSubmit.textContent = "Save Transaction";
+  elements.transactionCancel.hidden = false;
 }
 
 function fillBankrollForm(session) {
@@ -1599,6 +1781,8 @@ function render() {
   renderReviewQueue();
   renderTagSummary();
   renderStudyPlan();
+  renderBankrollImportPreview();
+  renderTransactions();
   renderSessions();
   renderHands();
   renderHandDetail();
@@ -1622,7 +1806,9 @@ async function refresh({ quiet = false } = {}) {
     tagsPayload,
     planPayload,
     bankrollSessionsPayload,
-    bankrollSummaryPayload
+    bankrollSummaryPayload,
+    bankrollTransactionsPayload,
+    bankrollTransactionSummaryPayload
   ] = await Promise.all([
     api("/api/hands?limit=500"),
     api("/api/imports"),
@@ -1632,7 +1818,9 @@ async function refresh({ quiet = false } = {}) {
     api("/api/study/tags"),
     api("/api/study/plan"),
     api("/api/bankroll/sessions"),
-    api("/api/bankroll/summary")
+    api("/api/bankroll/summary"),
+    api("/api/bankroll/transactions"),
+    api("/api/bankroll/transactions/summary")
   ]);
 
   state.hands = handsPayload.hands;
@@ -1644,6 +1832,8 @@ async function refresh({ quiet = false } = {}) {
   state.studyPlan = planPayload.items;
   state.bankrollSessions = bankrollSessionsPayload.sessions;
   state.bankrollSummary = bankrollSummaryPayload.summary;
+  state.bankrollTransactions = bankrollTransactionsPayload.transactions;
+  state.bankrollTransactionSummary = bankrollTransactionSummaryPayload.summary;
 
   if (state.selectedHandId && !state.hands.some((hand) => hand.id === state.selectedHandId)) {
     state.selectedHandId = null;
@@ -1757,7 +1947,13 @@ function countLabel(count, label) {
 function bankrollImportSummary(payload) {
   const duplicateCount = payload.duplicateCount ?? 0;
   const skippedCount = Math.max(0, (payload.skippedCount ?? 0) - duplicateCount);
-  const parts = [countLabel(payload.importedCount ?? 0, "session") + " imported"];
+  const importedSessions = payload.importedSessionCount ?? payload.importedCount ?? payload.readySessionCount ?? 0;
+  const importedTransactions = payload.importedTransactionCount ?? payload.readyTransactionCount ?? 0;
+  const parts = [countLabel(importedSessions, "session") + " imported"];
+
+  if (importedTransactions > 0) {
+    parts.push(countLabel(importedTransactions, "transaction") + " imported");
+  }
 
   if (duplicateCount > 0) {
     parts.push(countLabel(duplicateCount, "duplicate") + " skipped");
@@ -1765,6 +1961,23 @@ function bankrollImportSummary(payload) {
 
   if (skippedCount > 0) {
     parts.push(countLabel(skippedCount, "non-session row") + " skipped");
+  }
+
+  return parts.join(" / ");
+}
+
+function bankrollPreviewSummary(payload) {
+  const parts = [
+    countLabel(payload.readySessionCount ?? 0, "session") + " ready",
+    countLabel(payload.readyTransactionCount ?? 0, "transaction") + " ready"
+  ];
+
+  if ((payload.duplicateCount ?? 0) > 0) {
+    parts.push(countLabel(payload.duplicateCount, "duplicate") + " found");
+  }
+
+  if ((payload.skippedCount ?? 0) > 0) {
+    parts.push(countLabel(payload.skippedCount, "row") + " skipped");
   }
 
   return parts.join(" / ");
@@ -2132,6 +2345,8 @@ elements.bankrollImportFile.addEventListener("change", async (event) => {
   try {
     const rawText = await readSelectedFile(file);
     elements.bankrollImportForm.elements.rawText.value = rawText;
+    state.bankrollImportPreview = null;
+    renderBankrollImportPreview();
     elements.bankrollImportStatus.textContent = `${file.name} loaded.`;
   } catch (error) {
     showToast(error.message);
@@ -2142,6 +2357,29 @@ elements.clearBankrollImport.addEventListener("click", () => {
   elements.bankrollImportForm.elements.rawText.value = "";
   elements.bankrollImportFile.value = "";
   elements.bankrollImportStatus.textContent = "";
+  state.bankrollImportPreview = null;
+  renderBankrollImportPreview();
+});
+
+elements.previewBankrollImport.addEventListener("click", async () => {
+  const rawText = elements.bankrollImportForm.elements.rawText.value;
+
+  try {
+    elements.bankrollImportStatus.textContent = "Building preview...";
+    const payload = await api("/api/bankroll/imports/preview", {
+      method: "POST",
+      body: {
+        rawText,
+        source: "bankroll-csv"
+      }
+    });
+    state.bankrollImportPreview = payload;
+    renderBankrollImportPreview(payload);
+    elements.bankrollImportStatus.textContent = bankrollPreviewSummary(payload);
+  } catch (error) {
+    elements.bankrollImportStatus.textContent = error.message;
+    showToast(error.message);
+  }
 });
 
 elements.bankrollImportForm.addEventListener("submit", async (event) => {
@@ -2158,7 +2396,9 @@ elements.bankrollImportForm.addEventListener("submit", async (event) => {
       }
     });
     state.selectedSessionId = payload.sessions?.[0]?.id ?? state.selectedSessionId;
+    state.bankrollImportPreview = payload;
     await refresh();
+    renderBankrollImportPreview(payload);
     elements.bankrollImportStatus.textContent = bankrollImportSummary(payload);
     showToast(bankrollImportSummary(payload));
   } catch (error) {
@@ -2244,6 +2484,66 @@ elements.sessionList.addEventListener("click", async (event) => {
       fillBankrollForm(session);
     }
     renderSessions();
+  }
+});
+
+elements.transactionForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const editingTransactionId = elements.transactionForm.dataset.editingTransactionId;
+
+  try {
+    const payload = await api(
+      editingTransactionId
+        ? `/api/bankroll/transactions/${encodeURIComponent(editingTransactionId)}`
+        : "/api/bankroll/transactions",
+      {
+        method: editingTransactionId ? "PATCH" : "POST",
+        body: {
+          date: form.get("date"),
+          type: form.get("type"),
+          amount: form.get("amount"),
+          bankrollName: form.get("bankrollName"),
+          note: form.get("note")
+        }
+      }
+    );
+    await refresh();
+    fillTransactionForm(transactionById(payload.transaction.id) ?? payload.transaction);
+    showToast(`${editingTransactionId ? "Saved" : "Added"} ${formatCurrency(payload.transaction.amount, { signed: true })} transaction.`);
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
+elements.transactionCancel.addEventListener("click", resetTransactionForm);
+
+elements.transactionList.addEventListener("click", async (event) => {
+  const deleteTarget = event.target.closest("[data-delete-bankroll-transaction]");
+  if (deleteTarget) {
+    if (!window.confirm("Delete this bankroll transaction?")) {
+      return;
+    }
+
+    try {
+      const payload = await api(`/api/bankroll/transactions/${encodeURIComponent(deleteTarget.dataset.deleteBankrollTransaction)}`, {
+        method: "DELETE"
+      });
+      await refresh();
+      resetTransactionForm();
+      showToast(`Deleted ${formatCurrency(payload.transaction.amount, { signed: true })} transaction.`);
+    } catch (error) {
+      showToast(error.message);
+    }
+    return;
+  }
+
+  const editTarget = event.target.closest("[data-edit-bankroll-transaction]");
+  if (editTarget) {
+    const transaction = transactionById(editTarget.dataset.editBankrollTransaction);
+    if (transaction) {
+      fillTransactionForm(transaction);
+    }
   }
 });
 
@@ -2377,6 +2677,9 @@ elements.signOut.addEventListener("click", () => {
 async function boot() {
   if (elements.bankrollForm?.elements.date) {
     elements.bankrollForm.elements.date.value = new Date().toISOString().slice(0, 10);
+  }
+  if (elements.transactionForm?.elements.date) {
+    resetTransactionForm();
   }
 
   try {
