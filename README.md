@@ -4,7 +4,7 @@ Backdoor Flush is a small hand-history desk for reviewing poker sessions.
 
 The local app lets you upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, track bankroll sessions, and run quick equity checks.
 
-Version 2.0 adds clearer workspace status, account/local/demo save feedback, session-level filters, and a data-health view that shows how sessions, imports, linked hands, and review work fit together.
+Version 2.1 adds a selected-session drill-down for reviewing the hands tied to one bankroll session without treating partial hand capture as complete session data.
 
 ## Run it
 
@@ -41,7 +41,8 @@ Local mode:
 - Links imports to bankroll sessions when uploading, from the import log, or through the sample loader.
 - Saves live-entered hands from a structured builder with seats, cards, actions, winners, and session links.
 - Offers a read-only demo workspace that stays separate from a signed-in user's real data.
-- Opens a session detail view with linked imports, linked hands, and estimated hero results from parsed actions.
+- Opens a session detail view with linked imports, linked hand filters, session audit counts, filtered review queues, and estimated hero results from parsed actions.
+- Compares the logged bankroll result with the captured-hand estimate so missing hands are visible instead of hidden.
 - Saves tags and notes on individual hands.
 - Builds a hands-to-review list from large swings, tagged hands, river decisions, and unreviewed spots.
 - Opens a dedicated Review view with queue filters, progress, batch sessions, and current-hand navigation.
@@ -135,7 +136,7 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 ## Next
 
 - Support more hand-history formats and larger real-world exports.
-- Add deeper linked-hand filters inside the selected session detail.
 - Add CSV/JSON exports for bankroll sessions and ledger transactions.
 - Add decision review exports for selected sessions.
+- Add session-level review export and share links for filtered hand queues.
 - Replace the first-pass decision flags with a larger recommendation engine.

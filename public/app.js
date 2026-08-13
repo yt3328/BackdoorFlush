@@ -140,6 +140,15 @@ const emptyBankrollFilters = {
   reviewStatus: ""
 };
 
+const emptySessionDetailFilters = {
+  tag: "",
+  reviewed: "",
+  position: "",
+  result: "",
+  potSize: "",
+  sort: "swing"
+};
+
 const state = {
   view: "overview",
   hands: [],
@@ -150,6 +159,7 @@ const state = {
   bankrollTransactionSummary: emptyTransactionSummary,
   bankrollImportPreview: null,
   bankrollFilters: { ...emptyBankrollFilters },
+  sessionDetailFilters: { ...emptySessionDetailFilters },
   homePeriod: "30d",
   players: [],
   leaks: [],
@@ -426,6 +436,7 @@ function clearDashboardData() {
   state.bankrollTransactionSummary = emptyTransactionSummary;
   state.bankrollImportPreview = null;
   state.bankrollFilters = { ...emptyBankrollFilters };
+  state.sessionDetailFilters = { ...emptySessionDetailFilters };
   state.players = [];
   state.leaks = [];
   state.reviewSpots = [];
@@ -1766,6 +1777,161 @@ function handsForSession(id) {
   return state.hands.filter((hand) => hand.sessionId === id);
 }
 
+function sessionPotSizeBucket(hand, session) {
+  const pot = trackedPot(hand);
+  const bigBlind = finiteNumber(session?.bigBlind, parseBigBlind(session?.stakes));
+  const potBb = bigBlind > 0 ? pot / bigBlind : pot;
+
+  if (potBb >= 100) {
+    return "large";
+  }
+
+  if (potBb >= 30) {
+    return "medium";
+  }
+
+  return "small";
+}
+
+function sessionPotSizeLabel(bucket) {
+  return {
+    small: "Small pot",
+    medium: "Medium pot",
+    large: "Large pot"
+  }[bucket] ?? "Any pot";
+}
+
+function sessionHandFilterValues(hands, getter) {
+  return [...new Set(hands.map(getter).filter(Boolean))]
+    .sort((a, b) => {
+      const aIndex = positionOrder.includes(a) ? positionOrder.indexOf(a) : positionOrder.length;
+      const bIndex = positionOrder.includes(b) ? positionOrder.indexOf(b) : positionOrder.length;
+      return aIndex - bIndex || String(a).localeCompare(String(b), undefined, {
+        numeric: true,
+        sensitivity: "base"
+      });
+    });
+}
+
+function filterSessionHands(hands, session) {
+  const filters = state.sessionDetailFilters;
+  let filtered = [...hands];
+
+  if (filters.tag) {
+    filtered = filtered.filter((hand) => handTags(hand).includes(filters.tag));
+  }
+
+  if (filters.reviewed === "true") {
+    filtered = filtered.filter((hand) => Boolean(hand.reviewedAt));
+  } else if (filters.reviewed === "false") {
+    filtered = filtered.filter((hand) => !hand.reviewedAt);
+  }
+
+  if (filters.position) {
+    filtered = filtered.filter((hand) => heroPosition(hand) === filters.position);
+  }
+
+  if (filters.result) {
+    filtered = filtered.filter((hand) => resultBucket(hand) === filters.result);
+  }
+
+  if (filters.potSize) {
+    filtered = filtered.filter((hand) => sessionPotSizeBucket(hand, session) === filters.potSize);
+  }
+
+  filtered.sort((a, b) => {
+    if (filters.sort === "biggest-loss") {
+      return estimatedHeroResult(a) - estimatedHeroResult(b);
+    }
+
+    if (filters.sort === "biggest-win") {
+      return estimatedHeroResult(b) - estimatedHeroResult(a);
+    }
+
+    if (filters.sort === "biggest-pot") {
+      return trackedPot(b) - trackedPot(a);
+    }
+
+    if (filters.sort === "newest") {
+      return handDateValue(b) - handDateValue(a);
+    }
+
+    if (filters.sort === "open-first") {
+      return Number(Boolean(a.reviewedAt)) - Number(Boolean(b.reviewedAt)) || Math.abs(estimatedHeroResult(b)) - Math.abs(estimatedHeroResult(a));
+    }
+
+    return Math.abs(estimatedHeroResult(b)) - Math.abs(estimatedHeroResult(a));
+  });
+
+  return filtered;
+}
+
+function sessionHandStats(hands = []) {
+  const openHands = hands.filter((hand) => !hand.reviewedAt).length;
+  const taggedHands = hands.filter((hand) => handTags(hand).length > 0).length;
+  const totalResult = hands.reduce((sum, hand) => sum + estimatedHeroResult(hand), 0);
+  const biggestPot = hands.reduce((max, hand) => Math.max(max, trackedPot(hand)), 0);
+
+  return {
+    handCount: hands.length,
+    openHands,
+    reviewedHands: hands.length - openHands,
+    taggedHands,
+    totalResult: roundNumber(totalResult),
+    biggestPot: roundNumber(biggestPot)
+  };
+}
+
+function compareSessionReviewSpots(a, b, sort = "swing") {
+  if (sort === "open-first") {
+    return Number(Boolean(a.reviewedAt)) - Number(Boolean(b.reviewedAt)) || compareSessionReviewSpots(a, b, "swing");
+  }
+
+  if (sort === "swing") {
+    return Math.abs(b.estimatedHeroResult) - Math.abs(a.estimatedHeroResult) || (b.trackedPot ?? 0) - (a.trackedPot ?? 0);
+  }
+
+  if (["biggest-loss", "biggest-win", "biggest-pot", "newest"].includes(sort)) {
+    return compareReviewSpots(a, b, sort);
+  }
+
+  return compareReviewSpots(a, b, "priority");
+}
+
+function sessionReviewQueue(hands = [], sort = state.sessionDetailFilters.sort) {
+  return hands
+    .filter((hand) => !hand.reviewedAt || handTags(hand).length > 0 || Math.abs(estimatedHeroResult(hand)) > 0)
+    .map(clientReviewSpot)
+    .sort((a, b) => compareSessionReviewSpots(a, b, sort));
+}
+
+function sessionHandFilterSummary(filteredHands, allHands) {
+  const parts = [];
+  const filters = state.sessionDetailFilters;
+
+  if (filters.tag) {
+    parts.push(tagLabel(filters.tag));
+  }
+  if (filters.reviewed === "true") {
+    parts.push("reviewed");
+  } else if (filters.reviewed === "false") {
+    parts.push("open");
+  }
+  if (filters.position) {
+    parts.push(filters.position);
+  }
+  if (filters.result) {
+    parts.push(filters.result);
+  }
+  if (filters.potSize) {
+    parts.push(sessionPotSizeLabel(filters.potSize).toLowerCase());
+  }
+
+  return parts.length
+    ? `${filteredHands.length} of ${allHands.length} linked hands shown / ${parts.join(" / ")}`
+    : `${allHands.length} linked hands shown`;
+}
+
 function estimatedHeroResult(hand) {
   if (!hand.hero) {
     return 0;
@@ -3040,9 +3206,11 @@ function reviewedThisWeekCount() {
   return state.hands.filter((hand) => hand.reviewedAt && String(hand.reviewedAt).slice(0, 10) >= start).length;
 }
 
-function startReviewSession({ initialHandId = "" } = {}) {
+function startReviewSession({ initialHandId = "", queueIds: sourceQueueIds = null } = {}) {
   const batchSize = Number(elements.reviewBatchSize.value || state.reviewSession.batchSize || 5);
-  const ids = reviewQueueIds();
+  const ids = Array.isArray(sourceQueueIds)
+    ? sourceQueueIds.filter((id) => Boolean(handById(id)))
+    : reviewQueueIds();
   const queueIds = ids.slice(0, Math.max(1, batchSize));
 
   if (initialHandId && !queueIds.includes(initialHandId) && handById(initialHandId)) {
@@ -3800,6 +3968,123 @@ function fillBankrollForm(session) {
   elements.bankrollCancel.hidden = false;
 }
 
+function selectedOption(current, value) {
+  return current === value ? "selected" : "";
+}
+
+function renderSessionHandFilters(hands, session) {
+  const filters = state.sessionDetailFilters;
+  const tags = sessionHandFilterValues(hands.flatMap((hand) => handTags(hand)), (tag) => tag);
+  const positions = sessionHandFilterValues(hands, heroPosition);
+  const potBuckets = sessionHandFilterValues(hands, (hand) => sessionPotSizeBucket(hand, session));
+
+  if (filters.tag && !tags.includes(filters.tag)) {
+    filters.tag = "";
+  }
+  if (filters.position && !positions.includes(filters.position)) {
+    filters.position = "";
+  }
+  if (filters.potSize && !potBuckets.includes(filters.potSize)) {
+    filters.potSize = "";
+  }
+  if (!["", "true", "false"].includes(filters.reviewed)) {
+    filters.reviewed = "";
+  }
+  if (!["", "win", "loss", "breakeven"].includes(filters.result)) {
+    filters.result = "";
+  }
+  if (!["swing", "open-first", "biggest-loss", "biggest-win", "biggest-pot", "newest"].includes(filters.sort)) {
+    filters.sort = "swing";
+  }
+
+  return `
+    <div class="session-hand-filters">
+      <label>
+        Tag
+        <select data-session-hand-filter="tag" aria-label="Session hand tag filter">
+          <option value="">All tags</option>
+          ${tags.map((tag) => `<option value="${escapeHtml(tag)}" ${selectedOption(filters.tag, tag)}>${escapeHtml(tagLabel(tag))}</option>`).join("")}
+        </select>
+      </label>
+      <label>
+        Review
+        <select data-session-hand-filter="reviewed" aria-label="Session hand review filter">
+          <option value="">All review</option>
+          <option value="false" ${selectedOption(filters.reviewed, "false")}>Open</option>
+          <option value="true" ${selectedOption(filters.reviewed, "true")}>Reviewed</option>
+        </select>
+      </label>
+      <label>
+        Position
+        <select data-session-hand-filter="position" aria-label="Session hero position filter">
+          <option value="">All positions</option>
+          ${positions.map((position) => `<option value="${escapeHtml(position)}" ${selectedOption(filters.position, position)}>${escapeHtml(position)}</option>`).join("")}
+        </select>
+      </label>
+      <label>
+        Result
+        <select data-session-hand-filter="result" aria-label="Session hand result filter">
+          <option value="">All results</option>
+          <option value="loss" ${selectedOption(filters.result, "loss")}>Losses</option>
+          <option value="win" ${selectedOption(filters.result, "win")}>Wins</option>
+          <option value="breakeven" ${selectedOption(filters.result, "breakeven")}>Breakeven</option>
+        </select>
+      </label>
+      <label>
+        Pot size
+        <select data-session-hand-filter="potSize" aria-label="Session hand pot size filter">
+          <option value="">Any pot</option>
+          ${["large", "medium", "small"]
+            .filter((bucket) => potBuckets.includes(bucket))
+            .map((bucket) => `<option value="${escapeHtml(bucket)}" ${selectedOption(filters.potSize, bucket)}>${escapeHtml(sessionPotSizeLabel(bucket))}</option>`)
+            .join("")}
+        </select>
+      </label>
+      <label>
+        Sort
+        <select data-session-hand-filter="sort" aria-label="Session hand sort">
+          <option value="swing" ${selectedOption(filters.sort, "swing")}>Swing size</option>
+          <option value="open-first" ${selectedOption(filters.sort, "open-first")}>Open first</option>
+          <option value="biggest-loss" ${selectedOption(filters.sort, "biggest-loss")}>Loss</option>
+          <option value="biggest-win" ${selectedOption(filters.sort, "biggest-win")}>Win</option>
+          <option value="biggest-pot" ${selectedOption(filters.sort, "biggest-pot")}>Pot</option>
+          <option value="newest" ${selectedOption(filters.sort, "newest")}>Newest</option>
+        </select>
+      </label>
+      <button class="button secondary" type="button" data-reset-session-hand-filters>Reset</button>
+    </div>
+  `;
+}
+
+function renderSessionHandRow(hand, session) {
+  const result = estimatedHeroResult(hand);
+  const pot = trackedPot(hand);
+  const potBucket = sessionPotSizeBucket(hand, session);
+  const tags = handTags(hand);
+  const heroCards = hand.hero ? hand.holeCards[hand.hero] ?? [] : [];
+
+  return `
+    <article class="session-hand-row">
+      <button class="session-hand-main" type="button" data-open-hand="${escapeHtml(hand.id)}">
+        <div>
+          <div class="session-row-title">
+            <strong>#${escapeHtml(hand.handNumber)} / ${escapeHtml(hand.tableName ?? "Table")}</strong>
+            <span class="pill">${hand.reviewedAt ? "reviewed" : "open"}</span>
+          </div>
+          ${renderCards([...heroCards, ...(hand.board ?? [])])}
+          <p>${escapeHtml(heroPosition(hand))} / ${escapeHtml(sessionPotSizeLabel(potBucket))} / ${formatCurrency(pot)} pot</p>
+          ${tags.length ? renderTags(tags) : ""}
+        </div>
+        <strong>${formatCurrency(result, { signed: true })}</strong>
+      </button>
+      <div class="row-actions">
+        <button class="button secondary" type="button" data-open-hand="${escapeHtml(hand.id)}">Open Hand</button>
+        <button class="button ghost" type="button" data-open-session-review-hand="${escapeHtml(hand.id)}">Review</button>
+      </div>
+    </article>
+  `;
+}
+
 function renderSessionDetail(visibleSessions = state.bankrollSessions) {
   const selectedSession = visibleSessions.some((session) => sessionId(session) === state.selectedSessionId)
     ? sessionById(state.selectedSessionId)
@@ -3826,15 +4111,23 @@ function renderSessionDetail(visibleSessions = state.bankrollSessions) {
   const id = sessionId(selectedSession);
   const linkedImports = importsForSession(id);
   const linkedHands = handsForSession(id);
-  const sessionQueue = state.reviewSpots.filter((spot) => spot.sessionId === id).slice(0, 5);
+  const filteredHands = filterSessionHands(linkedHands, selectedSession);
+  const allStats = sessionHandStats(linkedHands);
+  const filteredStats = sessionHandStats(filteredHands);
+  const sessionQueue = sessionReviewQueue(filteredHands).slice(0, 5);
+  const openQueue = sessionQueue.filter((spot) => !spot.reviewedAt);
   const estimatedResult = linkedHands.reduce((sum, hand) => sum + estimatedHeroResult(hand), 0);
-  const spots = linkedHands
+  const difference = selectedSession.profit - estimatedResult;
+  const importedHands = linkedHands.filter((hand) => hand.source !== "live-entry").length;
+  const liveHands = Math.max(0, linkedHands.length - importedHands);
+  const spots = filteredHands
     .map((hand) => ({
       hand,
       result: estimatedHeroResult(hand)
     }))
     .sort((a, b) => Math.abs(b.result) - Math.abs(a.result))
     .slice(0, 6);
+  const strongestTag = demoTagSummary(linkedHands)[0] ?? null;
 
   elements.sessionDetail.innerHTML = `
     <section class="session-detail-card">
@@ -3842,8 +4135,12 @@ function renderSessionDetail(visibleSessions = state.bankrollSessions) {
         <div>
           <span class="subtle">Selected session</span>
           <strong>${escapeHtml(sessionLabel(selectedSession))}</strong>
+          <p>${escapeHtml(formatLongDate(selectedSession.date))} / ${escapeHtml(selectedSession.gameType)} / ${formatNumber(selectedSession.hours, 1)} hours</p>
         </div>
-        <span class="pill">${linkedHands.length} hands</span>
+        <div class="session-detail-actions">
+          <span class="pill">${linkedHands.length} linked hands</span>
+          <button class="button secondary" type="button" data-start-session-review="${escapeHtml(id)}" ${sessionQueue.length === 0 ? "disabled" : ""}>Review Filtered</button>
+        </div>
       </div>
       <div class="detail-summary compact">
         <div>
@@ -3854,40 +4151,89 @@ function renderSessionDetail(visibleSessions = state.bankrollSessions) {
           <span class="subtle">Estimated from hands</span>
           <strong>${formatCurrency(estimatedResult, { signed: true })}</strong>
         </div>
+        <div>
+          <span class="subtle">Uncaptured gap</span>
+          <strong>${formatCurrency(difference, { signed: true })}</strong>
+        </div>
+        <div>
+          <span class="subtle">Open reviews</span>
+          <strong>${allStats.openHands}</strong>
+        </div>
       </div>
-      <div class="linked-section">
-        <h4>Linked Imports</h4>
-        ${
-          linkedImports.length
-            ? linkedImports.map((item) => `<p>${escapeHtml(item.name)} / ${item.handCount} hands / ${escapeHtml(item.status ?? "ready")}</p>`).join("")
-            : '<p class="muted-line">No imports linked yet.</p>'
-        }
+      <p class="session-capture-note">Logged result is the bankroll record. Captured-hand estimate only sums saved or imported hands linked to this session, so the gap usually means not every hand from the session is recorded.</p>
+
+      <div class="session-drilldown-controls">
+        <div>
+          <h4>Linked Hand Filters</h4>
+          <p>${escapeHtml(sessionHandFilterSummary(filteredHands, linkedHands))}</p>
+        </div>
+        ${renderSessionHandFilters(linkedHands, selectedSession)}
       </div>
+
+      <div class="session-drilldown-grid">
+        <div class="session-mini-panel">
+          <h4>Session Audit</h4>
+          <div class="audit-list">
+            <p><strong>${linkedImports.length}</strong><span>linked imports</span></p>
+            <p><strong>${liveHands}</strong><span>live-built hands</span></p>
+            <p><strong>${importedHands}</strong><span>imported hands</span></p>
+            <p><strong>${allStats.reviewedHands}/${linkedHands.length}</strong><span>hands reviewed</span></p>
+          </div>
+          ${
+            linkedImports.length
+              ? `<div class="linked-section compact">
+                  ${linkedImports.map((item) => `<p>${escapeHtml(item.name)} / ${item.handCount} hands / ${escapeHtml(item.status ?? "ready")}</p>`).join("")}
+                </div>`
+              : '<p class="muted-line">No imports linked yet. Link an import or save a live hand to this session.</p>'
+          }
+        </div>
+
+        <div class="session-mini-panel">
+          <h4>Filtered Breakdown</h4>
+          <div class="audit-list">
+            <p><strong>${filteredStats.handCount}</strong><span>hands shown</span></p>
+            <p><strong>${filteredStats.openHands}</strong><span>open reviews</span></p>
+            <p><strong>${formatCurrency(filteredStats.totalResult, { signed: true })}</strong><span>captured result</span></p>
+            <p><strong>${formatCurrency(filteredStats.biggestPot)}</strong><span>biggest pot</span></p>
+          </div>
+          <p class="muted-line">${
+            strongestTag
+              ? `Most common tag in this session: ${escapeHtml(tagLabel(strongestTag.tag))}.`
+              : "Tags saved on linked hands will surface session-level patterns here."
+          }</p>
+        </div>
+      </div>
+
       <div class="linked-section">
-        <h4>Hands to Review</h4>
+        <div class="linked-section-head">
+          <h4>Session Review Queue</h4>
+          <span>${openQueue.length} open / ${sessionQueue.length} filtered</span>
+        </div>
         ${
           sessionQueue.length
             ? sessionQueue.map((spot) => `
-                <button class="linked-hand" type="button" data-open-hand="${escapeHtml(spot.id)}">
+                <button class="linked-hand" type="button" data-open-session-review-hand="${escapeHtml(spot.id)}">
                   <span>#${escapeHtml(spot.handNumber)} / ${escapeHtml(spot.reasons.join(", "))}</span>
                   <strong>${formatCurrency(spot.estimatedHeroResult, { signed: true })}</strong>
                 </button>
               `).join("")
-            : '<p class="muted-line">Tagged hands and large decision points appear here.</p>'
+            : '<p class="muted-line">No linked hands match the current filters.</p>'
         }
       </div>
       <div class="linked-section">
-        <h4>Largest Swings</h4>
+        <div class="linked-section-head">
+          <h4>Filtered Linked Hands</h4>
+          <span>${filteredHands.length} shown</span>
+        </div>
         ${
           spots.length
-            ? spots.map(({ hand, result }) => `
-                <button class="linked-hand" type="button" data-open-hand="${escapeHtml(hand.id)}">
-                  <span>#${escapeHtml(hand.handNumber)} / ${escapeHtml(hand.tableName ?? "Table")}</span>
-                  <strong>${formatCurrency(result, { signed: true })}</strong>
-                </button>
-              `).join("")
+            ? spots.map(({ hand }) => renderSessionHandRow(hand, selectedSession)).join("")
             : '<p class="muted-line">Linked hands appear here after an import finishes parsing.</p>'
         }
+      </div>
+      <div class="linked-section session-reflection">
+        <h4>Session Reflection</h4>
+        <p>${selectedSession.notes ? escapeHtml(selectedSession.notes) : "Use the session note field for what went well, mistakes, mental game, and the next adjustment."}</p>
       </div>
     </section>
   `;
@@ -4788,6 +5134,26 @@ async function openReviewView({ handId = "", startSession = false } = {}) {
   renderReviewWorkflow();
 }
 
+async function openSessionReview(sessionIdValue, initialHandId = "") {
+  const session = sessionById(sessionIdValue);
+  if (!session) {
+    showToast("Select a session first.");
+    return;
+  }
+
+  const queueIds = sessionReviewQueue(filterSessionHands(handsForSession(sessionIdValue), session))
+    .map((spot) => spot.id);
+  const targetId = startReviewSession({ initialHandId, queueIds }) ?? initialHandId;
+
+  if (!targetId) {
+    renderSessionDetail(filteredBankrollSessions());
+    showToast("No linked hands match the current session filters.");
+    return;
+  }
+
+  await openReviewView({ handId: targetId });
+}
+
 function readSelectedFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -5577,6 +5943,7 @@ elements.bankrollImportForm.addEventListener("submit", async (event) => {
       }
     });
     state.selectedSessionId = payload.sessions?.[0]?.id ?? state.selectedSessionId;
+    state.sessionDetailFilters = { ...emptySessionDetailFilters };
     state.bankrollImportPreview = payload;
     await refresh();
     renderBankrollImportPreview(payload);
@@ -5599,22 +5966,24 @@ elements.bankrollForm.addEventListener("submit", async (event) => {
         ? `/api/bankroll/sessions/${encodeURIComponent(editingSessionId)}`
         : "/api/bankroll/sessions",
       {
-      method: editingSessionId ? "PATCH" : "POST",
-      body: {
-        date: form.get("date"),
-        location: form.get("location"),
-        gameType: form.get("gameType"),
-        stakes: form.get("stakes"),
-        tableSize: form.get("tableSize"),
-        hours: form.get("hours"),
-        buyIn: form.get("buyIn"),
-        cashOut: form.get("cashOut"),
-        profit: form.get("profit"),
-        bigBlind: form.get("bigBlind"),
-        notes: form.get("notes")
+        method: editingSessionId ? "PATCH" : "POST",
+        body: {
+          date: form.get("date"),
+          location: form.get("location"),
+          gameType: form.get("gameType"),
+          stakes: form.get("stakes"),
+          tableSize: form.get("tableSize"),
+          hours: form.get("hours"),
+          buyIn: form.get("buyIn"),
+          cashOut: form.get("cashOut"),
+          profit: form.get("profit"),
+          bigBlind: form.get("bigBlind"),
+          notes: form.get("notes")
+        }
       }
-    });
+    );
     state.selectedSessionId = payload.session.id;
+    state.sessionDetailFilters = { ...emptySessionDetailFilters };
     await refresh();
     fillBankrollForm(sessionById(state.selectedSessionId) ?? payload.session);
     showToast(markWorkspaceSaved(`${editingSessionId ? "Saved" : "Added"} ${formatCurrency(payload.session.profit, { signed: true })} session`));
@@ -5636,6 +6005,7 @@ elements.sessionList.addEventListener("click", async (event) => {
       });
       if (state.selectedSessionId === deleteTarget.dataset.deleteBankrollSession) {
         state.selectedSessionId = null;
+        state.sessionDetailFilters = { ...emptySessionDetailFilters };
         resetBankrollForm();
       }
       await refresh();
@@ -5651,6 +6021,7 @@ elements.sessionList.addEventListener("click", async (event) => {
     const session = sessionById(editTarget.dataset.editBankrollSession);
     if (session) {
       state.selectedSessionId = sessionId(session);
+      state.sessionDetailFilters = { ...emptySessionDetailFilters };
       fillBankrollForm(session);
       renderSessions();
     }
@@ -5660,6 +6031,7 @@ elements.sessionList.addEventListener("click", async (event) => {
   const rowTarget = event.target.closest("[data-select-bankroll-session]");
   if (rowTarget) {
     state.selectedSessionId = rowTarget.dataset.selectBankrollSession;
+    state.sessionDetailFilters = { ...emptySessionDetailFilters };
     const session = sessionById(state.selectedSessionId);
     if (session) {
       fillBankrollForm(session);
@@ -5729,6 +6101,25 @@ elements.transactionList.addEventListener("click", async (event) => {
 });
 
 elements.sessionDetail.addEventListener("click", (event) => {
+  const reviewTarget = event.target.closest("[data-start-session-review]");
+  if (reviewTarget) {
+    openSessionReview(reviewTarget.dataset.startSessionReview).catch((error) => showToast(error.message));
+    return;
+  }
+
+  const sessionReviewTarget = event.target.closest("[data-open-session-review-hand]");
+  if (sessionReviewTarget) {
+    openSessionReview(state.selectedSessionId, sessionReviewTarget.dataset.openSessionReviewHand).catch((error) => showToast(error.message));
+    return;
+  }
+
+  const resetTarget = event.target.closest("[data-reset-session-hand-filters]");
+  if (resetTarget) {
+    state.sessionDetailFilters = { ...emptySessionDetailFilters };
+    renderSessionDetail(filteredBankrollSessions());
+    return;
+  }
+
   const target = event.target.closest("[data-open-hand]");
   if (!target) {
     return;
@@ -5738,8 +6129,19 @@ elements.sessionDetail.addEventListener("click", (event) => {
   selectHand(target.dataset.openHand).catch((error) => showToast(error.message));
 });
 
+elements.sessionDetail.addEventListener("change", (event) => {
+  const target = event.target.closest("[data-session-hand-filter]");
+  if (!target) {
+    return;
+  }
+
+  state.sessionDetailFilters[target.dataset.sessionHandFilter] = target.value;
+  renderSessionDetail(filteredBankrollSessions());
+});
+
 elements.bankrollCancel.addEventListener("click", () => {
   state.selectedSessionId = null;
+  state.sessionDetailFilters = { ...emptySessionDetailFilters };
   resetBankrollForm();
   renderSessions();
 });
@@ -5781,6 +6183,7 @@ elements.liveForm.addEventListener("submit", async (event) => {
     }
     if (payload.hand?.sessionId) {
       state.selectedSessionId = payload.hand.sessionId;
+      state.sessionDetailFilters = { ...emptySessionDetailFilters };
     }
     render();
     setView("hands");

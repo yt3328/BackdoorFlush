@@ -2244,8 +2244,127 @@ button.tag-chip.active,
   display: block;
 }
 
+.session-detail-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.session-detail-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .detail-summary.compact {
   margin-bottom: 0;
+}
+
+.session-capture-note {
+  margin: 0;
+  border: 1px solid #d3b46e;
+  border-radius: 8px;
+  background: #fff8e7;
+  color: #5d4217;
+  padding: 10px 12px;
+  line-height: 1.45;
+}
+
+.session-drilldown-controls {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.session-drilldown-controls h4,
+.session-drilldown-controls p {
+  margin: 0;
+}
+
+.session-drilldown-controls h4 {
+  font-size: 0.9rem;
+}
+
+.session-drilldown-controls p {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.session-hand-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  align-items: end;
+  gap: 8px;
+}
+
+.session-hand-filters label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.session-hand-filters select {
+  width: 100%;
+}
+
+.session-hand-filters .button {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+.session-drilldown-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.session-mini-panel {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 12px;
+}
+
+.session-mini-panel h4,
+.session-mini-panel p {
+  margin: 0;
+}
+
+.session-mini-panel h4 {
+  font-size: 0.9rem;
+}
+
+.audit-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.audit-list p {
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 9px;
+}
+
+.audit-list strong,
+.audit-list span {
+  display: block;
+}
+
+.audit-list span {
+  color: var(--muted);
+  font-size: 0.76rem;
 }
 
 .linked-section {
@@ -2260,6 +2379,23 @@ button.tag-chip.active,
 
 .linked-section h4 {
   font-size: 0.9rem;
+}
+
+.linked-section.compact {
+  gap: 5px;
+}
+
+.linked-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.linked-section-head span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .linked-section p,
@@ -2333,6 +2469,90 @@ button.tag-chip.active,
 
 .linked-hand:hover {
   border-color: var(--felt);
+}
+
+.session-hand-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 10px;
+}
+
+.session-hand-row:hover {
+  border-color: var(--felt);
+  box-shadow: 0 0 0 3px rgba(15, 107, 79, 0.08);
+}
+
+.session-hand-main {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 0;
+  text-align: left;
+}
+
+.session-hand-main > div {
+  min-width: 0;
+}
+
+.session-hand-main p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.session-hand-main > strong {
+  white-space: nowrap;
+}
+
+.session-hand-row .cards {
+  margin: 7px 0;
+}
+
+.session-hand-row .card {
+  width: 34px;
+  height: 48px;
+  border-radius: 6px;
+  box-shadow: 0 5px 12px rgba(20, 24, 21, 0.12);
+}
+
+.session-hand-row .card-corner {
+  left: 4px;
+  top: 4px;
+}
+
+.session-hand-row .card-corner strong {
+  font-size: 0.62rem;
+}
+
+.session-hand-row .card-corner em {
+  font-size: 0.6rem;
+}
+
+.session-hand-row .card-center {
+  font-size: 1.22rem;
+}
+
+.session-hand-row .row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.session-reflection {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
 }
 
 .import-actions {
@@ -2773,6 +2993,8 @@ button.tag-chip.active,
   .review-workspace,
   .sessions-workspace,
   .hand-filters,
+  .session-hand-filters,
+  .session-drilldown-grid,
   .table-setup-grid,
   .live-action-compose,
   .live-preview-stats {
@@ -2826,6 +3048,7 @@ button.tag-chip.active,
 
   .topbar,
   .workspace-health-head,
+  .session-detail-head,
   .panel-head {
     align-items: stretch;
     flex-direction: column;
@@ -2899,6 +3122,7 @@ button.tag-chip.active,
   }
 
   .review-command-controls,
+  .session-detail-actions,
   .review-session-actions,
   .review-hand-nav {
     align-items: stretch;
@@ -2911,6 +3135,7 @@ button.tag-chip.active,
   }
 
   .review-command-controls select,
+  .session-hand-filters .button,
   .review-session-actions .button,
   .review-hand-nav .button {
     width: 100%;
@@ -2921,6 +3146,7 @@ button.tag-chip.active,
   .review-context-strip,
   .form-grid,
   .session-kpis,
+  .audit-list,
   .library-summary,
   .decision-strip,
   .decision-metrics,
@@ -2945,10 +3171,21 @@ button.tag-chip.active,
   }
 
   .import-row,
+  .session-hand-row,
+  .session-hand-main,
   .session-row,
   .transaction-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .session-hand-row,
+  .session-hand-main {
+    grid-template-columns: 1fr;
+  }
+
+  .session-hand-main > strong {
+    justify-self: start;
   }
 
   .live-table-felt,
