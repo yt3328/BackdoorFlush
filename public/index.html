@@ -655,7 +655,14 @@
 
             <section class="panel">
               <div class="panel-head">
-                <h3>Your Sessions</h3>
+                <div>
+                  <h3>Your Sessions</h3>
+                </div>
+                <div class="session-export-actions">
+                  <button id="export-sessions-csv" class="button secondary" type="button">Sessions CSV</button>
+                  <button id="export-transactions-csv" class="button secondary" type="button">Transactions CSV</button>
+                  <button id="export-workspace-json" class="button secondary" type="button">Backup JSON</button>
+                </div>
               </div>
               <div id="session-summary" class="session-summary"></div>
               <div id="session-list" class="session-list"></div>

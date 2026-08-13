@@ -369,6 +369,60 @@ test("bankroll transaction endpoints create, update, summarize, and delete ledge
   assert.equal(deletePayload.transaction.id, createPayload.transaction.id);
 });
 
+test("workspace export endpoint includes bankroll, ledger, imports, and hands", async () => {
+  const sessionResponse = await dispatch({
+    method: "POST",
+    url: "/api/bankroll/sessions",
+    body: {
+      date: "2026-08-09",
+      location: "Bellagio",
+      gameType: "cash",
+      stakes: "$2/$5",
+      hours: 5,
+      profit: 800,
+      notes: "Review value hand."
+    }
+  });
+  const sessionPayload = await sessionResponse.json();
+  await dispatch({
+    method: "POST",
+    url: "/api/bankroll/transactions",
+    body: {
+      date: "2026-08-10",
+      type: "withdrawal",
+      amount: -200,
+      bankrollName: "Main",
+      note: "Takeout after session."
+    }
+  });
+  await createTaggedLiveHand({
+    sessionId: sessionPayload.session.id,
+    handNumber: "export-target",
+    tags: ["value-bet"],
+    reviewed: true,
+    winner: "Tao",
+    wonAmount: 220,
+    riverAmount: 50
+  });
+
+  const exportResponse = await dispatch({ url: "/api/export/workspace" });
+  const exportPayload = await exportResponse.json();
+
+  assert.equal(exportResponse.status, 200);
+  assert.equal(exportPayload.app, "Backdoor Flush");
+  assert.equal(exportPayload.schemaVersion, "2.2.0");
+  assert.equal(exportPayload.mode, "local");
+  assert.equal(exportPayload.counts.bankrollSessions, 1);
+  assert.equal(exportPayload.counts.bankrollTransactions, 1);
+  assert.equal(exportPayload.counts.imports, 1);
+  assert.equal(exportPayload.counts.hands, 1);
+  assert.equal(exportPayload.summaries.bankroll.totalProfit, 800);
+  assert.equal(exportPayload.summaries.transactions.totalAmount, -200);
+  assert.equal(exportPayload.bankrollSessions[0].location, "Bellagio");
+  assert.equal(exportPayload.bankrollTransactions[0].bankrollName, "Main");
+  assert.equal(exportPayload.hands[0].sessionId, sessionPayload.session.id);
+});
+
 test("imports can be linked to, moved between, and unlinked from bankroll sessions", async () => {
   const firstSessionResponse = await dispatch({
     method: "POST",

@@ -1208,6 +1208,18 @@ textarea {
   justify-content: flex-end;
 }
 
+.session-export-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.session-export-actions .button {
+  min-height: 36px;
+  padding: 7px 11px;
+}
+
 .panel-controls select {
   min-width: 118px;
 }
@@ -3122,6 +3134,7 @@ button.tag-chip.active,
   }
 
   .review-command-controls,
+  .session-export-actions,
   .session-detail-actions,
   .review-session-actions,
   .review-hand-nav {
@@ -3135,6 +3148,7 @@ button.tag-chip.active,
   }
 
   .review-command-controls select,
+  .session-export-actions .button,
   .session-hand-filters .button,
   .review-session-actions .button,
   .review-hand-nav .button {

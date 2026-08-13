@@ -4,7 +4,7 @@ Backdoor Flush is a small hand-history desk for reviewing poker sessions.
 
 The local app lets you upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, track bankroll sessions, and run quick equity checks.
 
-Version 2.1 adds a selected-session drill-down for reviewing the hands tied to one bankroll session without treating partial hand capture as complete session data.
+Version 2.2 adds bankroll CSV exports, selected-session hand exports, session review reports, and full workspace JSON backup.
 
 ## Run it
 
@@ -43,6 +43,8 @@ Local mode:
 - Offers a read-only demo workspace that stays separate from a signed-in user's real data.
 - Opens a session detail view with linked imports, linked hand filters, session audit counts, filtered review queues, and estimated hero results from parsed actions.
 - Compares the logged bankroll result with the captured-hand estimate so missing hands are visible instead of hidden.
+- Exports the current session view to CSV, the transaction ledger to CSV, filtered selected-session hands to CSV, and selected-session review reports to Markdown.
+- Exports a full workspace JSON backup through the local or cloud API.
 - Saves tags and notes on individual hands.
 - Builds a hands-to-review list from large swings, tagged hands, river decisions, and unreviewed spots.
 - Opens a dedicated Review view with queue filters, progress, batch sessions, and current-hand navigation.
@@ -74,6 +76,7 @@ AWS mode:
 - Writes bankroll sessions to a separate DynamoDB table.
 - Stores bankroll ledger transactions alongside session records in DynamoDB.
 - Imports exported bankroll sessions and transaction rows through the same protected API used by the dashboard.
+- Exposes a protected workspace backup endpoint for signed-in cloud data.
 - Exposes the same core stats/equity behavior through Lambda handlers.
 - Hosts the static dashboard from a private S3 bucket through CloudFront.
 
@@ -95,6 +98,7 @@ curl http://localhost:3400/api/bankroll/transactions
 curl -X POST http://localhost:3400/api/bankroll/imports/preview
 curl -X POST http://localhost:3400/api/bankroll/imports
 curl -X POST http://localhost:3400/api/live-hands
+curl http://localhost:3400/api/export/workspace
 curl -X DELETE http://localhost:3400/api/session
 ```
 
@@ -124,6 +128,7 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 - `src/core/bankrollImport.js` reads exported bankroll/session CSV text.
 - `src/core/bankrollTransactions.js` normalizes transaction ledger entries.
 - `src/core/sessionInsights.js` combines bankroll sessions with linked imports and hands.
+- `src/core/workspaceExport.js` builds the backup JSON payload.
 - `src/http/apiServer.js` exposes the local API and serves the dashboard.
 - `src/storage/handStore.js` keeps local state.
 - `src/aws/` contains Lambda handlers and AWS data adapters.
@@ -136,7 +141,7 @@ curl -X POST http://localhost:3400/api/equity/calculate \
 ## Next
 
 - Support more hand-history formats and larger real-world exports.
-- Add CSV/JSON exports for bankroll sessions and ledger transactions.
+- Add import-from-backup restore flow.
 - Add decision review exports for selected sessions.
-- Add session-level review export and share links for filtered hand queues.
+- Add share links for filtered hand queues.
 - Replace the first-pass decision flags with a larger recommendation engine.

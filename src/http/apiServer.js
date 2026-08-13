@@ -411,6 +411,17 @@ export function createHttpServer({ store }) {
         return;
       }
 
+      if (requestUrl.pathname === "/api/export/workspace") {
+        if (!methodAllowed(request, response, "GET")) {
+          return;
+        }
+
+        sendJson(response, 200, store.workspaceExport({
+          mode: "local"
+        }));
+        return;
+      }
+
       if (requestUrl.pathname === "/api/session") {
         if (!methodAllowed(request, response, "DELETE")) {
           return;

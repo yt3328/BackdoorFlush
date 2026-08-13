@@ -8,6 +8,7 @@ import { buildLiveHand } from "../core/liveHandBuilder.js";
 import { buildSessionDetail } from "../core/sessionInsights.js";
 import { buildBankrollSession, summarizeBankrollSessions } from "../core/sessionTracker.js";
 import { buildTagPerformance, filterHandLibrary, findSimilarHands } from "../core/studyTools.js";
+import { buildWorkspaceExport } from "../core/workspaceExport.js";
 
 function requiredEnv(name) {
   const value = process.env[name];
@@ -150,6 +151,28 @@ export class CloudHandStore {
     }));
 
     return sortByImportedAt((result.Items ?? []).map(publicImport));
+  }
+
+  async listAllImports() {
+    const { dynamo, sdk } = this.clients;
+    const items = [];
+    let exclusiveStartKey;
+
+    do {
+      const result = await dynamo.send(new sdk.QueryCommand({
+        TableName: this.importsTable,
+        KeyConditionExpression: "userId = :userId",
+        ExpressionAttributeValues: {
+          ":userId": this.userId
+        },
+        ExclusiveStartKey: exclusiveStartKey
+      }));
+
+      items.push(...(result.Items ?? []));
+      exclusiveStartKey = result.LastEvaluatedKey;
+    } while (exclusiveStartKey);
+
+    return sortByImportedAt(items.map(publicImport));
   }
 
   async createQueuedImport({ name, source, rawText, sessionId }) {
@@ -439,6 +462,28 @@ export class CloudHandStore {
     }
 
     return sortByImportedAt(hands).slice(0, limit);
+  }
+
+  async listAllHands() {
+    const { dynamo, sdk } = this.clients;
+    const items = [];
+    let exclusiveStartKey;
+
+    do {
+      const result = await dynamo.send(new sdk.QueryCommand({
+        TableName: this.handsTable,
+        KeyConditionExpression: "userId = :userId",
+        ExpressionAttributeValues: {
+          ":userId": this.userId
+        },
+        ExclusiveStartKey: exclusiveStartKey
+      }));
+
+      items.push(...(result.Items ?? []));
+      exclusiveStartKey = result.LastEvaluatedKey;
+    } while (exclusiveStartKey);
+
+    return sortByImportedAt(items.map(publicHand));
   }
 
   async getHand(handId) {
@@ -968,6 +1013,28 @@ export class CloudHandStore {
       session,
       imports: (await this.listImports()).filter((record) => record.sessionId === sessionId),
       hands: await this.listHands({ sessionId, limit: 1000 })
+    });
+  }
+
+  async workspaceExport({ mode = "cloud" } = {}) {
+    const [
+      imports,
+      hands,
+      bankrollSessions,
+      bankrollTransactions
+    ] = await Promise.all([
+      this.listAllImports(),
+      this.listAllHands(),
+      this.listBankrollSessions(),
+      this.listBankrollTransactions()
+    ]);
+
+    return buildWorkspaceExport({
+      mode,
+      imports,
+      hands,
+      bankrollSessions,
+      bankrollTransactions
     });
   }
 

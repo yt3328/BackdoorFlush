@@ -10,6 +10,7 @@ import { buildLiveHand } from "../core/liveHandBuilder.js";
 import { buildSessionDetail } from "../core/sessionInsights.js";
 import { buildBankrollSession, summarizeBankrollSessions } from "../core/sessionTracker.js";
 import { buildTagPerformance, filterHandLibrary, findSimilarHands } from "../core/studyTools.js";
+import { buildWorkspaceExport } from "../core/workspaceExport.js";
 
 function emptyState() {
   return {
@@ -537,6 +538,16 @@ export class HandStore {
       session,
       imports: this.state.imports.filter((record) => record.sessionId === sessionId),
       hands: this.listHands({ sessionId, limit: 1000 })
+    });
+  }
+
+  workspaceExport({ mode = "local" } = {}) {
+    return buildWorkspaceExport({
+      mode,
+      imports: [...this.state.imports],
+      hands: [...this.state.hands],
+      bankrollSessions: this.listBankrollSessions(),
+      bankrollTransactions: this.listBankrollTransactions()
     });
   }
 

@@ -1,5 +1,6 @@
 import { createAuthClient } from "./auth.js";
 
+const appVersion = "2.2.0";
 const positionOrder = ["BTN", "CO", "HJ", "LJ", "MP", "UTG+1", "UTG", "STR", "SB", "BB", "Unknown"];
 const streetOrder = ["hole-cards", "flop", "turn", "river", "show-down"];
 const streetLabels = {
@@ -278,6 +279,9 @@ const elements = {
   sessionList: document.querySelector("#session-list"),
   sessionSummary: document.querySelector("#session-summary"),
   sessionDetail: document.querySelector("#session-detail"),
+  exportSessionsCsv: document.querySelector("#export-sessions-csv"),
+  exportTransactionsCsv: document.querySelector("#export-transactions-csv"),
+  exportWorkspaceJson: document.querySelector("#export-workspace-json"),
   importList: document.querySelector("#import-list"),
   importForm: document.querySelector("#import-form"),
   importSession: document.querySelector("#import-session"),
@@ -1738,6 +1742,17 @@ function renderBankrollFilters() {
   }
 }
 
+function renderExportControls() {
+  const hasAnyData = state.imports.length > 0 ||
+    state.hands.length > 0 ||
+    state.bankrollSessions.length > 0 ||
+    state.bankrollTransactions.length > 0;
+
+  elements.exportSessionsCsv.disabled = filteredBankrollSessions().length === 0;
+  elements.exportTransactionsCsv.disabled = state.bankrollTransactions.length === 0;
+  elements.exportWorkspaceJson.disabled = !hasAnyData;
+}
+
 function sessionId(session) {
   return session?.sessionId ?? session?.id ?? "";
 }
@@ -1989,6 +2004,400 @@ function resultBucket(hand) {
 
 function handDateValue(hand) {
   return Date.parse(hand.importedAt ?? hand.createdAt ?? "") || 0;
+}
+
+function exportDateToken() {
+  return new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+}
+
+function slugPart(value, fallback = "export") {
+  const slug = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 72);
+
+  return slug || fallback;
+}
+
+function csvCell(value) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  const text = Array.isArray(value) ? value.join("; ") : String(value);
+  return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function rowsToCsv(rows) {
+  return `${rows.map((row) => row.map(csvCell).join(",")).join("\n")}\n`;
+}
+
+function markdownCell(value) {
+  return String(value ?? "")
+    .replaceAll("|", "\\|")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function markdownTable(headers, rows) {
+  if (rows.length === 0) {
+    return "";
+  }
+
+  return [
+    `| ${headers.map(markdownCell).join(" | ")} |`,
+    `| ${headers.map(() => "---").join(" | ")} |`,
+    ...rows.map((row) => `| ${row.map(markdownCell).join(" | ")} |`)
+  ].join("\n");
+}
+
+function downloadTextFile({ filename, text, mimeType }) {
+  const blob = new Blob([text], {
+    type: mimeType
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function cardsText(cards = []) {
+  return Array.isArray(cards) ? cards.filter(Boolean).join(" ") : "";
+}
+
+function sessionExportRows(sessions) {
+  const headers = [
+    "Session ID",
+    "Date",
+    "Location",
+    "Game Type",
+    "Stakes",
+    "Table Size",
+    "Hours",
+    "Buy In",
+    "Cash Out",
+    "Profit",
+    "Big Blind",
+    "BB Won",
+    "Hourly Rate",
+    "BB Per Hour",
+    "Linked Hands",
+    "Open Reviews",
+    "Reviewed Hands",
+    "Linked Imports",
+    "Notes"
+  ];
+
+  return [
+    headers,
+    ...sessions.map((session) => {
+      const id = sessionId(session);
+      const linkedHands = handsForSession(id);
+      const stats = sessionHandStats(linkedHands);
+
+      return [
+        id,
+        bankrollSessionDate(session),
+        session.location,
+        session.gameType,
+        session.stakes,
+        session.tableSize,
+        session.hours,
+        session.buyIn,
+        session.cashOut,
+        session.profit,
+        session.bigBlind,
+        session.bbWon ?? bankrollSessionBbWon(session),
+        session.hourlyRate,
+        session.bbPerHour,
+        linkedHands.length,
+        stats.openHands,
+        stats.reviewedHands,
+        importsForSession(id).map((item) => item.name),
+        session.notes
+      ];
+    })
+  ];
+}
+
+function transactionExportRows(transactions) {
+  return [
+    ["Transaction ID", "Date", "Type", "Amount", "Bankroll", "Note", "Created At", "Updated At"],
+    ...transactions.map((transaction) => [
+      transactionId(transaction),
+      transaction.date,
+      transaction.type,
+      transaction.amount,
+      transaction.bankrollName ?? "Default",
+      transaction.note,
+      transaction.createdAt,
+      transaction.updatedAt
+    ])
+  ];
+}
+
+function handExportRows(hands, session) {
+  return [
+    [
+      "Hand ID",
+      "Hand Number",
+      "Table",
+      "Source",
+      "Hero",
+      "Hero Position",
+      "Hero Cards",
+      "Board",
+      "Result",
+      "Pot",
+      "Pot Size",
+      "Reviewed",
+      "Tags",
+      "Imported At",
+      "Notes"
+    ],
+    ...hands.map((hand) => [
+      hand.id,
+      hand.handNumber,
+      hand.tableName,
+      hand.source,
+      hand.hero,
+      heroPosition(hand),
+      hand.hero ? cardsText(hand.holeCards[hand.hero] ?? []) : "",
+      cardsText(hand.board ?? []),
+      estimatedHeroResult(hand),
+      trackedPot(hand),
+      sessionPotSizeLabel(sessionPotSizeBucket(hand, session)),
+      hand.reviewedAt ? "yes" : "no",
+      handTags(hand),
+      hand.importedAt ?? hand.createdAt,
+      hand.notes
+    ])
+  ];
+}
+
+function clientWorkspaceBackup() {
+  return {
+    app: "Backdoor Flush",
+    schemaVersion: appVersion,
+    exportedAt: new Date().toISOString(),
+    mode: workspaceModeMeta().mode,
+    counts: {
+      imports: state.imports.length,
+      hands: state.hands.length,
+      bankrollSessions: state.bankrollSessions.length,
+      bankrollTransactions: state.bankrollTransactions.length
+    },
+    filters: {
+      homePeriod: state.homePeriod,
+      bankroll: { ...state.bankrollFilters },
+      sessionDetail: { ...state.sessionDetailFilters },
+      review: { ...state.reviewFilters }
+    },
+    summaries: {
+      bankroll: state.bankrollSummary,
+      visibleBankroll: currentBankrollSummary(),
+      transactions: state.bankrollTransactionSummary
+    },
+    imports: state.imports,
+    hands: state.hands,
+    bankrollSessions: state.bankrollSessions,
+    bankrollTransactions: state.bankrollTransactions,
+    reviewSpots: state.reviewSpots,
+    studyTags: state.studyTags,
+    studyPlan: state.studyPlan
+  };
+}
+
+async function workspaceBackupPayload() {
+  if (state.demoMode || !canUsePrivateApi()) {
+    return clientWorkspaceBackup();
+  }
+
+  return api("/api/export/workspace");
+}
+
+function exportSessionsCsv() {
+  const sessions = filteredBankrollSessions();
+  if (sessions.length === 0) {
+    showToast("No sessions in this view to export.");
+    return;
+  }
+
+  downloadTextFile({
+    filename: `backdoor-flush-sessions-${exportDateToken()}.csv`,
+    text: rowsToCsv(sessionExportRows(sessions)),
+    mimeType: "text/csv;charset=utf-8"
+  });
+  showToast(`Exported ${sessions.length} sessions.`);
+}
+
+function exportTransactionsCsv() {
+  if (state.bankrollTransactions.length === 0) {
+    showToast("No bankroll transactions to export.");
+    return;
+  }
+
+  downloadTextFile({
+    filename: `backdoor-flush-transactions-${exportDateToken()}.csv`,
+    text: rowsToCsv(transactionExportRows(state.bankrollTransactions)),
+    mimeType: "text/csv;charset=utf-8"
+  });
+  showToast(`Exported ${state.bankrollTransactions.length} transactions.`);
+}
+
+async function exportWorkspaceJson() {
+  const payload = await workspaceBackupPayload();
+  const counts = payload.counts ?? {};
+  const totalRecords = (counts.imports ?? 0) +
+    (counts.hands ?? 0) +
+    (counts.bankrollSessions ?? 0) +
+    (counts.bankrollTransactions ?? 0);
+
+  if (totalRecords === 0) {
+    showToast("No workspace data to export yet.");
+    return;
+  }
+
+  downloadTextFile({
+    filename: `backdoor-flush-backup-${exportDateToken()}.json`,
+    text: `${JSON.stringify(payload, null, 2)}\n`,
+    mimeType: "application/json;charset=utf-8"
+  });
+  showToast("Workspace backup exported.");
+}
+
+function exportSessionHandsCsv(sessionIdValue = state.selectedSessionId) {
+  const session = sessionById(sessionIdValue);
+  if (!session) {
+    showToast("Select a session first.");
+    return;
+  }
+
+  const hands = filterSessionHands(handsForSession(sessionIdValue), session);
+  if (hands.length === 0) {
+    showToast("No linked hands match the current session filters.");
+    return;
+  }
+
+  downloadTextFile({
+    filename: `backdoor-flush-${slugPart(sessionLabel(session), "session")}-hands-${exportDateToken()}.csv`,
+    text: rowsToCsv(handExportRows(hands, session)),
+    mimeType: "text/csv;charset=utf-8"
+  });
+  showToast(`Exported ${hands.length} linked hands.`);
+}
+
+function sessionReviewMarkdown(session) {
+  const id = sessionId(session);
+  const linkedImports = importsForSession(id);
+  const linkedHands = handsForSession(id);
+  const filteredHands = filterSessionHands(linkedHands, session);
+  const allStats = sessionHandStats(linkedHands);
+  const filteredStats = sessionHandStats(filteredHands);
+  const queue = sessionReviewQueue(filteredHands);
+  const estimatedResult = linkedHands.reduce((sum, hand) => sum + estimatedHeroResult(hand), 0);
+  const gap = session.profit - estimatedResult;
+  const importRows = linkedImports.map((item) => [
+    item.name,
+    item.source,
+    item.status ?? "ready",
+    item.handCount,
+    item.importedAt
+  ]);
+  const queueRows = queue.map((spot) => [
+    spot.handNumber,
+    spot.reasons.join(", "),
+    formatCurrency(spot.estimatedHeroResult, { signed: true }),
+    spot.reviewedAt ? "Reviewed" : "Open"
+  ]);
+  const handRows = filteredHands.map((hand) => [
+    hand.handNumber,
+    heroPosition(hand),
+    hand.hero ? cardsText(hand.holeCards[hand.hero] ?? []) : "",
+    cardsText(hand.board ?? []),
+    formatCurrency(estimatedHeroResult(hand), { signed: true }),
+    formatCurrency(trackedPot(hand)),
+    handTags(hand).map(tagLabel).join(", "),
+    hand.reviewedAt ? "Reviewed" : "Open"
+  ]);
+  const lines = [
+    `# ${sessionLabel(session)} Review`,
+    "",
+    `Generated: ${new Date().toLocaleString()}`,
+    `Workspace: ${workspaceModeMeta().title}`,
+    "",
+    "Logged result is the bankroll record. Captured-hand estimate only sums saved or imported hands linked to this session.",
+    "",
+    "## Summary",
+    "",
+    `- Logged result: ${formatCurrency(session.profit, { signed: true })}`,
+    `- Captured-hand estimate: ${formatCurrency(estimatedResult, { signed: true })}`,
+    `- Uncaptured gap: ${formatCurrency(gap, { signed: true })}`,
+    `- Hours: ${formatNumber(session.hours, 1)}`,
+    `- Hourly rate: ${formatCurrency(session.hourlyRate, { signed: true })}/hr`,
+    `- BB/hr: ${formatNumber(session.bbPerHour, 1)}`,
+    `- Linked hands: ${linkedHands.length}`,
+    `- Filtered hands: ${filteredHands.length}`,
+    `- Open reviews: ${allStats.openHands}`,
+    "",
+    "## Active Filters",
+    "",
+    `- Session scope: ${bankrollViewParts().join(" / ")}`,
+    `- Linked hand scope: ${sessionHandFilterSummary(filteredHands, linkedHands)}`,
+    "",
+    "## Session Audit",
+    "",
+    `- Linked imports: ${linkedImports.length}`,
+    `- Reviewed linked hands: ${allStats.reviewedHands}/${linkedHands.length}`,
+    `- Filtered captured result: ${formatCurrency(filteredStats.totalResult, { signed: true })}`,
+    `- Filtered biggest pot: ${formatCurrency(filteredStats.biggestPot)}`,
+    "",
+    "## Linked Imports",
+    "",
+    importRows.length
+      ? markdownTable(["Name", "Source", "Status", "Hands", "Imported At"], importRows)
+      : "No imports are linked to this session.",
+    "",
+    "## Filtered Review Queue",
+    "",
+    queueRows.length
+      ? markdownTable(["Hand", "Reasons", "Result", "Status"], queueRows)
+      : "No linked hands match the current review filters.",
+    "",
+    "## Filtered Hands",
+    "",
+    handRows.length
+      ? markdownTable(["Hand", "Position", "Hero Cards", "Board", "Result", "Pot", "Tags", "Status"], handRows)
+      : "No linked hands match the current filters.",
+    "",
+    "## Session Notes",
+    "",
+    session.notes || "No session notes saved.",
+    ""
+  ];
+
+  return `${lines.join("\n")}\n`;
+}
+
+function exportSessionReviewReport(sessionIdValue = state.selectedSessionId) {
+  const session = sessionById(sessionIdValue);
+  if (!session) {
+    showToast("Select a session first.");
+    return;
+  }
+
+  downloadTextFile({
+    filename: `backdoor-flush-${slugPart(sessionLabel(session), "session")}-review-${exportDateToken()}.md`,
+    text: sessionReviewMarkdown(session),
+    mimeType: "text/markdown;charset=utf-8"
+  });
+  showToast("Session review report exported.");
 }
 
 function reviewQueuePath() {
@@ -4140,6 +4549,8 @@ function renderSessionDetail(visibleSessions = state.bankrollSessions) {
         <div class="session-detail-actions">
           <span class="pill">${linkedHands.length} linked hands</span>
           <button class="button secondary" type="button" data-start-session-review="${escapeHtml(id)}" ${sessionQueue.length === 0 ? "disabled" : ""}>Review Filtered</button>
+          <button class="button secondary" type="button" data-export-session-report="${escapeHtml(id)}">Export Report</button>
+          <button class="button ghost" type="button" data-export-session-hands="${escapeHtml(id)}" ${filteredHands.length === 0 ? "disabled" : ""}>Hands CSV</button>
         </div>
       </div>
       <div class="detail-summary compact">
@@ -4885,6 +5296,7 @@ function render() {
   }
 
   renderBankrollFilters();
+  renderExportControls();
   renderHomePeriodControls();
   renderMetrics();
   renderWorkspaceHealth();
@@ -6100,7 +6512,25 @@ elements.transactionList.addEventListener("click", async (event) => {
   }
 });
 
+elements.exportSessionsCsv.addEventListener("click", exportSessionsCsv);
+elements.exportTransactionsCsv.addEventListener("click", exportTransactionsCsv);
+elements.exportWorkspaceJson.addEventListener("click", () => {
+  exportWorkspaceJson().catch((error) => showToast(error.message));
+});
+
 elements.sessionDetail.addEventListener("click", (event) => {
+  const reportTarget = event.target.closest("[data-export-session-report]");
+  if (reportTarget) {
+    exportSessionReviewReport(reportTarget.dataset.exportSessionReport);
+    return;
+  }
+
+  const handsExportTarget = event.target.closest("[data-export-session-hands]");
+  if (handsExportTarget) {
+    exportSessionHandsCsv(handsExportTarget.dataset.exportSessionHands);
+    return;
+  }
+
   const reviewTarget = event.target.closest("[data-start-session-review]");
   if (reviewTarget) {
     openSessionReview(reviewTarget.dataset.startSessionReview).catch((error) => showToast(error.message));

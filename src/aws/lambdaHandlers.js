@@ -356,6 +356,12 @@ export async function api(event) {
       });
     }
 
+    if (pathname === "/api/export/workspace" && method === "GET") {
+      return jsonResponse(200, await store.workspaceExport({
+        mode: "cloud"
+      }));
+    }
+
     if (pathname === "/api/session" && method === "DELETE") {
       return jsonResponse(200, await store.clear());
     }
