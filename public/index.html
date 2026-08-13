@@ -7,7 +7,105 @@
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
-    <div class="shell">
+    <section id="landing-page" class="landing-page">
+      <header class="landing-nav">
+        <div class="brand">
+          <div class="mark">BF</div>
+          <div>
+            <h1>Backdoor Flush</h1>
+            <p>poker improvement desk</p>
+          </div>
+        </div>
+        <div class="landing-nav-actions">
+          <button class="button secondary" type="button" data-start-tracking>Sign in</button>
+        </div>
+      </header>
+
+      <main class="landing-main">
+        <section class="landing-hero">
+          <div class="landing-copy">
+            <p class="eyebrow">Backdoor Flush</p>
+            <h2>Play. Review. Improve.</h2>
+            <p>Track your poker sessions, review important hands, discover your leaks, and know what to work on next.</p>
+            <div class="landing-actions">
+              <button class="button" type="button" data-start-tracking>Start Tracking Free</button>
+              <button class="button secondary" type="button" data-load-demo>Explore Demo</button>
+            </div>
+          </div>
+
+          <div class="landing-preview" aria-label="Backdoor Flush dashboard preview">
+            <section class="landing-preview-card primary">
+              <span class="subtle">Last 30 days</span>
+              <strong>+$3,420</strong>
+              <p>47.2 hours / +$72 per hour / 10 sessions</p>
+              <div class="preview-curve" aria-hidden="true">
+                <span style="height: 28%"></span>
+                <span style="height: 40%"></span>
+                <span style="height: 35%"></span>
+                <span style="height: 55%"></span>
+                <span style="height: 62%"></span>
+                <span style="height: 77%"></span>
+              </div>
+            </section>
+            <section class="landing-preview-card">
+              <span class="subtle">Hands to Review</span>
+              <strong>8 waiting</strong>
+              <p>River calls, 3-bet pots, and large-loss hands stay close to the surface.</p>
+            </section>
+            <section class="landing-preview-card felt">
+              <span class="subtle">Saved hand</span>
+              <div class="cards">
+                <span class="card card-heart mini-card">
+                  <span class="card-corner"><strong>A</strong><em>&hearts;</em></span>
+                  <span class="card-center">&hearts;</span>
+                </span>
+                <span class="card card-spade mini-card">
+                  <span class="card-corner"><strong>K</strong><em>&spades;</em></span>
+                  <span class="card-center">&spades;</span>
+                </span>
+              </div>
+              <p>Capture live spots, then replay the decisions later.</p>
+            </section>
+          </div>
+        </section>
+
+        <section class="landing-loop" aria-labelledby="landing-loop-title">
+          <div>
+            <p class="eyebrow">The Backdoor Loop</p>
+            <h3 id="landing-loop-title">A tighter routine for getting better</h3>
+          </div>
+          <div class="loop-steps">
+            <span>Play</span>
+            <span>Track</span>
+            <span>Review</span>
+            <span>Find Leaks</span>
+            <span>Study</span>
+            <span>Improve</span>
+          </div>
+        </section>
+
+        <section class="landing-outcomes" aria-label="Product outcomes">
+          <article>
+            <h3>Know how you're performing</h3>
+            <p>See profit, win rate, hours, stakes, locations, and bankroll progress from the sessions you log.</p>
+          </article>
+          <article>
+            <h3>Capture the hands that matter</h3>
+            <p>Save live hands, link them to sessions, and keep difficult decisions ready for review.</p>
+          </article>
+          <article>
+            <h3>Find patterns in your game</h3>
+            <p>Use tags, position context, player tendencies, and review history as study signals.</p>
+          </article>
+          <article>
+            <h3>Know what to work on next</h3>
+            <p>Turn saved hands into a review queue and study plan instead of another forgotten note.</p>
+          </article>
+        </section>
+      </main>
+    </section>
+
+    <div id="app-shell" class="shell" hidden>
       <aside class="sidebar">
         <div class="brand">
           <div class="mark">BF</div>
@@ -54,7 +152,7 @@
               <button id="sign-in" class="button secondary" type="button" hidden>Sign in</button>
               <button id="sign-out" class="button ghost" type="button" hidden>Sign out</button>
             </div>
-            <button id="load-demo" class="button secondary" type="button">Load Sample</button>
+            <button id="load-demo" class="button secondary" type="button">Explore Demo</button>
             <button id="clear-session" class="button ghost" type="button">Clear Session</button>
             <button id="refresh" class="button" type="button">Refresh</button>
           </div>
@@ -63,6 +161,14 @@
         <section id="auth-notice" class="auth-notice" hidden>
           <strong>Sign in to open your cloud workspace.</strong>
           <span>Your imports, hands, and review queue stay tied to your account.</span>
+        </section>
+
+        <section id="demo-banner" class="demo-banner" hidden>
+          <div>
+            <strong>Demo Mode</strong>
+            <span>This workspace is temporary and separate from your real account.</span>
+          </div>
+          <button id="exit-demo" class="button secondary" type="button">Exit Demo</button>
         </section>
 
         <section class="view active" id="view-overview">
@@ -85,6 +191,7 @@
             </article>
           </div>
           <section id="study-sample-context" class="sample-context" aria-label="Hand sample context"></section>
+          <section id="overview-empty" class="empty-state hero-empty" hidden></section>
 
           <section class="panel bankroll-filter-panel" aria-labelledby="bankroll-filter-title">
             <div class="panel-head filter-head">

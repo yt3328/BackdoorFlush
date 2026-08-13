@@ -27,6 +27,7 @@ const suggestedReviewTags = [
   "all-in",
   "live-hand"
 ];
+const onboardingStorageKey = "backdoor-flush.onboarding-entered";
 const liveTableSizes = [2, 3, 4, 5, 6, 7, 8, 9, 10];
 const livePositionOptions = ["BTN", "SB", "BB", "STR", "UTG", "UTG+1", "MP", "MP+1", "LJ", "HJ", "CO"];
 const liveDefaultPositions = {
@@ -151,13 +152,17 @@ const state = {
   liveShowdownDrafts: {},
   liveActions: [],
   replayStep: 0,
-  importPollTimer: null
+  importPollTimer: null,
+  showLanding: true,
+  demoMode: false
 };
 
 const apiBase = window.POKER_FELT_SCOPE_API_BASE ?? "";
 const auth = createAuthClient(window.POKER_FELT_SCOPE_AUTH);
 
 const elements = {
+  landing: document.querySelector("#landing-page"),
+  appShell: document.querySelector("#app-shell"),
   title: document.querySelector("#page-title"),
   navButtons: [...document.querySelectorAll(".nav-button")],
   views: [...document.querySelectorAll(".view")],
@@ -165,6 +170,8 @@ const elements = {
   signIn: document.querySelector("#sign-in"),
   signOut: document.querySelector("#sign-out"),
   authNotice: document.querySelector("#auth-notice"),
+  demoBanner: document.querySelector("#demo-banner"),
+  exitDemo: document.querySelector("#exit-demo"),
   loadDemo: document.querySelector("#load-demo"),
   clearSession: document.querySelector("#clear-session"),
   refresh: document.querySelector("#refresh"),
@@ -186,6 +193,7 @@ const elements = {
   positionChart: document.querySelector("#position-chart"),
   importChart: document.querySelector("#import-chart"),
   studySampleContext: document.querySelector("#study-sample-context"),
+  overviewEmpty: document.querySelector("#overview-empty"),
   bankrollChart: document.querySelector("#bankroll-chart"),
   locationChart: document.querySelector("#location-chart"),
   bankrollFilterControls: [...document.querySelectorAll("[data-bankroll-filter]")],
@@ -252,6 +260,10 @@ const elements = {
 };
 
 async function api(path, options = {}) {
+  if (state.demoMode) {
+    throw new Error("Demo mode is read-only. Exit demo to use your workspace.");
+  }
+
   const headers = {
     "content-type": "application/json",
     ...(options.headers ?? {})
@@ -324,19 +336,32 @@ function clearDashboardData() {
 
 function renderAuthState() {
   const signedIn = auth.isSignedIn();
-  const needsSignIn = auth.enabled && !signedIn;
+  const needsSignIn = auth.enabled && !signedIn && !state.demoMode && !state.showLanding;
+
+  elements.landing.hidden = !state.showLanding;
+  elements.appShell.hidden = state.showLanding;
 
   elements.authStatus.textContent = auth.enabled
-    ? signedIn
+    ? state.demoMode
+      ? "Demo mode"
+      : signedIn
       ? auth.displayName()
       : "Signed out"
-    : "Local mode";
+    : state.demoMode
+      ? "Demo mode"
+      : "Local mode";
   elements.signIn.hidden = !auth.enabled || signedIn;
   elements.signOut.hidden = !auth.enabled || !signedIn;
   elements.authNotice.hidden = !needsSignIn;
+  elements.demoBanner.hidden = !state.demoMode;
+  elements.loadDemo.textContent = state.demoMode ? "Reload Demo" : "Explore Demo";
+  elements.clearSession.textContent = state.demoMode ? "Exit Demo" : "Clear Session";
+  elements.refresh.disabled = needsSignIn || state.demoMode;
+  document.body.classList.toggle("landing-open", state.showLanding);
+  document.body.classList.toggle("demo-mode", state.demoMode);
   document.body.classList.toggle("signed-out", needsSignIn);
 
-  for (const button of [elements.loadDemo, elements.clearSession, elements.refresh]) {
+  for (const button of [elements.loadDemo, elements.clearSession]) {
     button.disabled = needsSignIn;
   }
 }
@@ -373,6 +398,38 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function renderEmptyState({
+  title,
+  body,
+  primaryLabel,
+  primaryView,
+  secondaryLabel = "Explore Demo",
+  secondaryAction = "demo",
+  secondaryView = "",
+  compact = false
+}) {
+  const primary = primaryLabel && primaryView
+    ? `<button class="button" type="button" data-jump-view="${escapeHtml(primaryView)}">${escapeHtml(primaryLabel)}</button>`
+    : "";
+  const secondary = secondaryLabel
+    ? `<button class="button secondary" type="button" ${
+      secondaryView
+        ? `data-jump-view="${escapeHtml(secondaryView)}"`
+        : secondaryAction === "start"
+          ? "data-start-tracking"
+          : "data-load-demo"
+    }>${escapeHtml(secondaryLabel)}</button>`
+    : "";
+
+  return `
+    <div class="empty-state ${compact ? "compact" : ""}">
+      <strong>${escapeHtml(title)}</strong>
+      <p>${escapeHtml(body)}</p>
+      ${primary || secondary ? `<div class="empty-actions">${primary}${secondary}</div>` : ""}
+    </div>
+  `;
+}
+
 function setView(view) {
   state.view = view;
   elements.title.textContent = viewTitles[view] ?? view[0].toUpperCase() + view.slice(1);
@@ -384,7 +441,662 @@ function setView(view) {
   for (const panel of elements.views) {
     panel.classList.toggle("active", panel.id === `view-${view}`);
   }
+
+  window.scrollTo(0, 0);
 }
+
+function demoSessions() {
+  return [
+    {
+      id: "demo-session-1",
+      date: "2026-07-18",
+      location: "Bellagio",
+      gameType: "cash",
+      stakes: "$2/$5 NLH",
+      tableSize: 8,
+      hours: 4.8,
+      buyIn: 1000,
+      cashOut: 1640,
+      profit: 640,
+      bigBlind: 5,
+      bbWon: 128,
+      bbPerHour: 26.7,
+      notes: "Strong table, two marked river spots."
+    },
+    {
+      id: "demo-session-2",
+      date: "2026-07-24",
+      location: "Aria",
+      gameType: "cash",
+      stakes: "$2/$5/$10 NLH",
+      tableSize: 9,
+      hours: 5.6,
+      buyIn: 2000,
+      cashOut: 1460,
+      profit: -540,
+      bigBlind: 5,
+      bbWon: -108,
+      bbPerHour: -19.3,
+      notes: "Straddle game. Save hands where pot size got away from me."
+    },
+    {
+      id: "demo-session-3",
+      date: "2026-07-31",
+      location: "Wynn",
+      gameType: "cash",
+      stakes: "$5/$10 NLH",
+      tableSize: 8,
+      hours: 6.2,
+      buyIn: 2500,
+      cashOut: 3920,
+      profit: 1420,
+      bigBlind: 10,
+      bbWon: 142,
+      bbPerHour: 22.9,
+      notes: "Good value spots in position."
+    },
+    {
+      id: "demo-session-4",
+      date: "2026-08-04",
+      location: "Home Game",
+      gameType: "home-game",
+      stakes: "$1/$3 NLH",
+      tableSize: 7,
+      hours: 3.5,
+      buyIn: 600,
+      cashOut: 410,
+      profit: -190,
+      bigBlind: 3,
+      bbWon: -63.3,
+      bbPerHour: -18.1,
+      notes: "Loose table, review bluff catches."
+    },
+    {
+      id: "demo-session-5",
+      date: "2026-08-09",
+      location: "Bellagio",
+      gameType: "cash",
+      stakes: "$2/$5 NLH",
+      tableSize: 8,
+      hours: 5.1,
+      buyIn: 1000,
+      cashOut: 1880,
+      profit: 880,
+      bigBlind: 5,
+      bbWon: 176,
+      bbPerHour: 34.5,
+      notes: "Best session this month. Review value line."
+    }
+  ];
+}
+
+function demoHands() {
+  return [
+    {
+      id: "demo-hand-1",
+      importId: "demo-import-1",
+      sessionId: "demo-session-2",
+      handNumber: "DF-102",
+      tableName: "Aria 2/5/10",
+      source: "live-entry",
+      hero: "Hero",
+      holeCards: {
+        Hero: ["Ah", "Kh"],
+        Mateo: ["Ks", "Qs"]
+      },
+      board: ["Kc", "8h", "4h", "2s", "9d"],
+      players: [
+        { seat: 1, name: "Hero", stack: 2100, position: "BTN" },
+        { seat: 2, name: "Nina", stack: 1500, position: "SB" },
+        { seat: 3, name: "Owen", stack: 1800, position: "BB" },
+        { seat: 4, name: "Mateo", stack: 2600, position: "STR" },
+        { seat: 5, name: "Ivy", stack: 1300, position: "HJ" },
+        { seat: 6, name: "Sam", stack: 2200, position: "CO" }
+      ],
+      forcedBets: [
+        { player: "Nina", type: "small-blind", amount: 2 },
+        { player: "Owen", type: "big-blind", amount: 5 },
+        { player: "Mateo", type: "straddle", amount: 10 }
+      ],
+      actions: [
+        { street: "hole-cards", player: "Ivy", type: "folds", amount: null },
+        { street: "hole-cards", player: "Sam", type: "raises", amount: 35 },
+        { street: "hole-cards", player: "Hero", type: "raises", amount: 110 },
+        { street: "hole-cards", player: "Mateo", type: "calls", amount: 110 },
+        { street: "hole-cards", player: "Sam", type: "calls", amount: 110 },
+        { street: "flop", player: "Mateo", type: "checks", amount: null },
+        { street: "flop", player: "Sam", type: "checks", amount: null },
+        { street: "flop", player: "Hero", type: "bets", amount: 130 },
+        { street: "flop", player: "Mateo", type: "calls", amount: 130 },
+        { street: "flop", player: "Sam", type: "folds", amount: null },
+        { street: "turn", player: "Mateo", type: "checks", amount: null },
+        { street: "turn", player: "Hero", type: "bets", amount: 280 },
+        { street: "turn", player: "Mateo", type: "calls", amount: 280 },
+        { street: "river", player: "Mateo", type: "bets", amount: 725 },
+        { street: "river", player: "Hero", type: "folds", amount: null }
+      ],
+      winnings: {
+        Mateo: 1677
+      },
+      tags: ["river-decision", "3-bet-pot", "live-hand"],
+      notes: "Big river donk after calling flop and turn. Review whether turn sizing creates this river spot too often.",
+      reviewedAt: null,
+      importedAt: "2026-07-24T22:30:00.000Z",
+      createdAt: "2026-07-24T22:30:00.000Z"
+    },
+    {
+      id: "demo-hand-2",
+      importId: "demo-import-2",
+      sessionId: "demo-session-5",
+      handNumber: "DF-118",
+      tableName: "Bellagio 2/5",
+      source: "live-entry",
+      hero: "Hero",
+      holeCards: {
+        Hero: ["Qc", "Qd"],
+        Luca: ["As", "Jc"]
+      },
+      board: ["Qh", "7s", "3c", "8d", "2h"],
+      players: [
+        { seat: 1, name: "Hero", stack: 1420, position: "CO" },
+        { seat: 2, name: "Luca", stack: 980, position: "BB" },
+        { seat: 3, name: "Maya", stack: 860, position: "BTN" },
+        { seat: 4, name: "Ben", stack: 1100, position: "HJ" }
+      ],
+      forcedBets: [
+        { player: "Maya", type: "small-blind", amount: 2 },
+        { player: "Luca", type: "big-blind", amount: 5 }
+      ],
+      actions: [
+        { street: "hole-cards", player: "Ben", type: "folds", amount: null },
+        { street: "hole-cards", player: "Hero", type: "raises", amount: 20 },
+        { street: "hole-cards", player: "Maya", type: "folds", amount: null },
+        { street: "hole-cards", player: "Luca", type: "calls", amount: 20 },
+        { street: "flop", player: "Luca", type: "checks", amount: null },
+        { street: "flop", player: "Hero", type: "bets", amount: 25 },
+        { street: "flop", player: "Luca", type: "calls", amount: 25 },
+        { street: "turn", player: "Luca", type: "checks", amount: null },
+        { street: "turn", player: "Hero", type: "bets", amount: 75 },
+        { street: "turn", player: "Luca", type: "calls", amount: 75 },
+        { street: "river", player: "Luca", type: "checks", amount: null },
+        { street: "river", player: "Hero", type: "bets", amount: 180 },
+        { street: "river", player: "Luca", type: "calls", amount: 180 }
+      ],
+      winnings: {
+        Hero: 610
+      },
+      tags: ["value-bet", "live-hand"],
+      notes: "Good thin value spot. Compare river size against worse Qx and bluff-catchers.",
+      reviewedAt: "2026-08-10T12:00:00.000Z",
+      importedAt: "2026-08-09T20:15:00.000Z",
+      createdAt: "2026-08-09T20:15:00.000Z"
+    },
+    {
+      id: "demo-hand-3",
+      importId: "demo-import-3",
+      sessionId: "demo-session-4",
+      handNumber: "DF-121",
+      tableName: "Home Game",
+      source: "live-entry",
+      hero: "Hero",
+      holeCards: {
+        Hero: ["9h", "9s"]
+      },
+      board: ["Jd", "8d", "4c", "2h", "Ac"],
+      players: [
+        { seat: 1, name: "Hero", stack: 720, position: "BB" },
+        { seat: 2, name: "Chris", stack: 640, position: "BTN" },
+        { seat: 3, name: "Ray", stack: 510, position: "SB" },
+        { seat: 4, name: "Alex", stack: 900, position: "CO" }
+      ],
+      forcedBets: [
+        { player: "Ray", type: "small-blind", amount: 1 },
+        { player: "Hero", type: "big-blind", amount: 3 }
+      ],
+      actions: [
+        { street: "hole-cards", player: "Alex", type: "folds", amount: null },
+        { street: "hole-cards", player: "Chris", type: "raises", amount: 12 },
+        { street: "hole-cards", player: "Ray", type: "folds", amount: null },
+        { street: "hole-cards", player: "Hero", type: "calls", amount: 12 },
+        { street: "flop", player: "Hero", type: "checks", amount: null },
+        { street: "flop", player: "Chris", type: "bets", amount: 18 },
+        { street: "flop", player: "Hero", type: "calls", amount: 18 },
+        { street: "turn", player: "Hero", type: "checks", amount: null },
+        { street: "turn", player: "Chris", type: "bets", amount: 55 },
+        { street: "turn", player: "Hero", type: "calls", amount: 55 },
+        { street: "river", player: "Hero", type: "checks", amount: null },
+        { street: "river", player: "Chris", type: "bets", amount: 145 },
+        { street: "river", player: "Hero", type: "calls", amount: 145 }
+      ],
+      winnings: {
+        Chris: 464
+      },
+      tags: ["river-decision", "bad-call"],
+      notes: "Classic bluff-catch decision. Need to review opponent value range and missed draws.",
+      reviewedAt: null,
+      importedAt: "2026-08-04T23:45:00.000Z",
+      createdAt: "2026-08-04T23:45:00.000Z"
+    },
+    {
+      id: "demo-hand-4",
+      importId: "demo-import-4",
+      sessionId: "demo-session-3",
+      handNumber: "PS-845912",
+      tableName: "Wynn 5/10",
+      source: "hand-history-text",
+      hero: "Hero",
+      holeCards: {
+        Hero: ["Ad", "Jd"]
+      },
+      board: ["Jc", "6d", "2d", "Th", "4d"],
+      players: [
+        { seat: 1, name: "Hero", stack: 2600, position: "BTN" },
+        { seat: 2, name: "Maya", stack: 2100, position: "BB" },
+        { seat: 3, name: "Ben", stack: 1800, position: "HJ" }
+      ],
+      forcedBets: [
+        { player: "Maya", type: "big-blind", amount: 10 }
+      ],
+      actions: [
+        { street: "hole-cards", player: "Ben", type: "raises", amount: 30 },
+        { street: "hole-cards", player: "Hero", type: "calls", amount: 30 },
+        { street: "hole-cards", player: "Maya", type: "calls", amount: 30 },
+        { street: "flop", player: "Maya", type: "checks", amount: null },
+        { street: "flop", player: "Ben", type: "bets", amount: 55 },
+        { street: "flop", player: "Hero", type: "calls", amount: 55 },
+        { street: "flop", player: "Maya", type: "folds", amount: null },
+        { street: "turn", player: "Ben", type: "checks", amount: null },
+        { street: "turn", player: "Hero", type: "bets", amount: 150 },
+        { street: "turn", player: "Ben", type: "calls", amount: 150 },
+        { street: "river", player: "Ben", type: "checks", amount: null },
+        { street: "river", player: "Hero", type: "bets", amount: 420 },
+        { street: "river", player: "Ben", type: "folds", amount: null }
+      ],
+      winnings: {
+        Hero: 665
+      },
+      tags: ["bluff", "position"],
+      notes: "Good candidate to compare turn barrel and river follow-through.",
+      reviewedAt: null,
+      importedAt: "2026-07-31T21:30:00.000Z",
+      createdAt: "2026-07-31T21:30:00.000Z"
+    }
+  ];
+}
+
+function demoImports() {
+  return [
+    {
+      id: "demo-import-1",
+      name: "Aria straddle hands",
+      source: "live-entry",
+      status: "ready",
+      handCount: 1,
+      skippedCount: 0,
+      sessionId: "demo-session-2",
+      importedAt: "2026-07-24T22:30:00.000Z"
+    },
+    {
+      id: "demo-import-2",
+      name: "Bellagio value spots",
+      source: "live-entry",
+      status: "ready",
+      handCount: 1,
+      skippedCount: 0,
+      sessionId: "demo-session-5",
+      importedAt: "2026-08-09T20:15:00.000Z"
+    },
+    {
+      id: "demo-import-3",
+      name: "Home game review notes",
+      source: "live-entry",
+      status: "ready",
+      handCount: 1,
+      skippedCount: 0,
+      sessionId: "demo-session-4",
+      importedAt: "2026-08-04T23:45:00.000Z"
+    },
+    {
+      id: "demo-import-4",
+      name: "Wynn hand-history import",
+      source: "hand-history-text",
+      status: "ready",
+      handCount: 1,
+      skippedCount: 0,
+      sessionId: "demo-session-3",
+      importedAt: "2026-07-31T21:30:00.000Z"
+    }
+  ];
+}
+
+function demoTransactions() {
+  return [
+    {
+      id: "demo-transaction-1",
+      date: "2026-07-15",
+      type: "initial",
+      amount: 12000,
+      bankrollName: "Main",
+      note: "Starting bankroll for the demo month."
+    },
+    {
+      id: "demo-transaction-2",
+      date: "2026-08-01",
+      type: "withdrawal",
+      amount: -800,
+      bankrollName: "Main",
+      note: "Pulled out rent money after the Wynn session."
+    }
+  ];
+}
+
+function summarizeDemoTransactions(transactions) {
+  const totalAmount = transactions.reduce((sum, transaction) => sum + finiteNumber(transaction.amount), 0);
+  const inflow = transactions
+    .filter((transaction) => finiteNumber(transaction.amount) > 0)
+    .reduce((sum, transaction) => sum + finiteNumber(transaction.amount), 0);
+  const outflow = transactions
+    .filter((transaction) => finiteNumber(transaction.amount) < 0)
+    .reduce((sum, transaction) => sum + Math.abs(finiteNumber(transaction.amount)), 0);
+
+  return {
+    transactionCount: transactions.length,
+    totalAmount,
+    inflow,
+    outflow,
+    byType: [],
+    recentTransactions: transactions
+  };
+}
+
+function demoPlayers() {
+  return [
+    {
+      player: "Hero",
+      hands: 4,
+      vpipPct: 100,
+      pfrPct: 50,
+      threeBetPct: 25,
+      aggressionFactor: 1.8,
+      byPosition: {
+        BTN: { hands: 2, vpip: 2, pfr: 1, netWon: -10, vpipPct: 100, pfrPct: 50 },
+        CO: { hands: 1, vpip: 1, pfr: 1, netWon: 310, vpipPct: 100, pfrPct: 100 },
+        BB: { hands: 1, vpip: 1, pfr: 0, netWon: -233, vpipPct: 100, pfrPct: 0 }
+      }
+    },
+    {
+      player: "Chris",
+      hands: 1,
+      vpipPct: 100,
+      pfrPct: 100,
+      threeBetPct: 0,
+      aggressionFactor: 3,
+      byPosition: {
+        BTN: { hands: 1, vpip: 1, pfr: 1, netWon: 464, vpipPct: 100, pfrPct: 100 }
+      }
+    },
+    {
+      player: "Luca",
+      hands: 1,
+      vpipPct: 100,
+      pfrPct: 0,
+      threeBetPct: 0,
+      aggressionFactor: 0.25,
+      byPosition: {
+        BB: { hands: 1, vpip: 1, pfr: 0, netWon: -305, vpipPct: 100, pfrPct: 0 }
+      }
+    },
+    {
+      player: "Mateo",
+      hands: 1,
+      vpipPct: 100,
+      pfrPct: 0,
+      threeBetPct: 0,
+      aggressionFactor: 1,
+      byPosition: {
+        STR: { hands: 1, vpip: 1, pfr: 0, netWon: 1677, vpipPct: 100, pfrPct: 0 }
+      }
+    }
+  ];
+}
+
+function demoReviewReasons(hand) {
+  const tags = handTags(hand);
+
+  if (tags.includes("bad-call")) {
+    return ["River call", "Large losing spot"];
+  }
+
+  if (tags.includes("3-bet-pot")) {
+    return ["3-bet pot", "River decision"];
+  }
+
+  if (tags.includes("bluff")) {
+    return ["Barrel line", "Unreviewed hand"];
+  }
+
+  return ["Saved for review"];
+}
+
+function demoReviewSpots(hands) {
+  return hands
+    .filter((hand) => !hand.reviewedAt)
+    .map((hand) => ({
+      id: hand.id,
+      sessionId: hand.sessionId,
+      handNumber: hand.handNumber,
+      tableName: hand.tableName,
+      reasons: demoReviewReasons(hand),
+      estimatedHeroResult: estimatedHeroResult(hand),
+      heroCards: hand.hero ? hand.holeCards[hand.hero] ?? [] : [],
+      board: hand.board ?? [],
+      tags: hand.tags ?? [],
+      reviewedAt: hand.reviewedAt,
+      priority: Math.abs(estimatedHeroResult(hand))
+    }))
+    .sort((a, b) => b.priority - a.priority);
+}
+
+function demoTagSummary(hands) {
+  const rows = new Map();
+
+  for (const hand of hands) {
+    for (const tag of handTags(hand)) {
+      const current = rows.get(tag) ?? {
+        tag,
+        handCount: 0,
+        reviewedCount: 0,
+        totalResult: 0
+      };
+      current.handCount += 1;
+      current.reviewedCount += hand.reviewedAt ? 1 : 0;
+      current.totalResult += estimatedHeroResult(hand);
+      rows.set(tag, current);
+    }
+  }
+
+  return [...rows.values()]
+    .map((row) => ({
+      ...row,
+      reviewedPct: row.handCount === 0 ? 0 : Number(((row.reviewedCount / row.handCount) * 100).toFixed(1)),
+      totalResult: roundNumber(row.totalResult)
+    }))
+    .sort((a, b) => b.handCount - a.handCount || a.tag.localeCompare(b.tag));
+}
+
+function demoStudyPlan(hands) {
+  const riverHands = hands.filter((hand) => handTags(hand).includes("river-decision") && !hand.reviewedAt);
+  const badCalls = hands.filter((hand) => handTags(hand).includes("bad-call") && !hand.reviewedAt);
+  const bigPots = hands
+    .filter((hand) => trackedPot(hand) >= 500 && !hand.reviewedAt)
+    .sort((a, b) => trackedPot(b) - trackedPot(a));
+
+  return [
+    riverHands.length
+      ? {
+        title: "Review river decisions",
+        detail: `${riverHands.length} saved hands need a river decision pass.`,
+        count: riverHands.length,
+        handIds: riverHands.map((hand) => hand.id)
+      }
+      : null,
+    badCalls.length
+      ? {
+        title: "Audit bluff-catches",
+        detail: "Look at the price, blockers, and opponent value range before marking these reviewed.",
+        count: badCalls.length,
+        handIds: badCalls.map((hand) => hand.id)
+      }
+      : null,
+    bigPots.length
+      ? {
+        title: "Large pots first",
+        detail: "Start with the saved spots where a single decision moved the session most.",
+        count: bigPots.length,
+        handIds: bigPots.map((hand) => hand.id)
+      }
+      : null
+  ].filter(Boolean);
+}
+
+function demoDecisionReport(hand) {
+  const heroActions = (hand.actions ?? [])
+    .map((action, index) => ({ action, index }))
+    .filter(({ action }) => action.player === hand.hero);
+  const decisions = heroActions.map(({ action, index }, decisionIndex) => {
+    const amount = finiteNumber(action.amount);
+    const potBefore = trackedPotAt(hand, index);
+    const isRiverCall = action.street === "river" && action.type === "calls";
+    const isLargeBet = amount > 0 && potBefore > 0 && amount / potBefore > 0.65;
+
+    return {
+      id: `${hand.id}-decision-${decisionIndex + 1}`,
+      street: action.street,
+      actionType: action.type,
+      player: action.player,
+      amount,
+      potBefore: roundNumber(potBefore),
+      potOddsPct: action.type === "calls" && amount > 0 ? roundNumber((amount / (potBefore + amount)) * 100, 1) : null,
+      betSizePct: ["bets", "raises"].includes(action.type) && amount > 0 && potBefore > 0 ? roundNumber((amount / potBefore) * 100, 1) : null,
+      spr: action.street === "hole-cards" ? null : 3.4,
+      activePlayers: Math.max(2, hand.players.length - (hand.actions ?? []).slice(0, index).filter((item) => item.type === "folds").length),
+      flags: [
+        ...(isRiverCall ? ["River call needs range check"] : []),
+        ...(isLargeBet ? ["Large sizing"] : [])
+      ],
+      promptIds: isRiverCall ? ["range", "price"] : ["plan"],
+      note: "",
+      checklist: {},
+      reviewedAt: null
+    };
+  });
+
+  return {
+    summary: {
+      decisionCount: decisions.length,
+      reviewedCount: 0,
+      flaggedCount: decisions.filter((decision) => decision.flags.length).length
+    },
+    prompts: [
+      { id: "range", label: "What value hands does villain credibly represent?" },
+      { id: "price", label: "What pot odds did the call need?" },
+      { id: "plan", label: "What was the plan for the next street?" }
+    ],
+    decisions
+  };
+}
+
+function setDemoDecisionContext(handId) {
+  const hand = state.hands.find((item) => item.id === handId);
+  if (!hand) {
+    state.similarForHandId = null;
+    state.similarHands = [];
+    state.decisionReportForHandId = null;
+    state.decisionReport = null;
+    state.selectedDecisionId = null;
+    return;
+  }
+
+  const tags = handTags(hand);
+  state.similarForHandId = handId;
+  state.similarHands = state.hands
+    .filter((item) => item.id !== handId && item.tags?.some((tag) => tags.includes(tag)))
+    .slice(0, 6)
+    .map((item) => ({
+      id: item.id,
+      handNumber: item.handNumber,
+      heroPosition: heroPosition(item),
+      estimatedHeroResult: estimatedHeroResult(item),
+      similarityReasons: item.tags.filter((tag) => tags.includes(tag)).map(tagLabel)
+    }));
+  state.decisionReportForHandId = handId;
+  state.decisionReport = demoDecisionReport(hand);
+  state.selectedDecisionId = state.decisionReport.decisions[0]?.id ?? null;
+}
+
+function loadDemoExperience({ quiet = false } = {}) {
+  const sessions = demoSessions();
+  const hands = demoHands();
+  const transactions = demoTransactions();
+
+  clearDashboardData();
+  state.demoMode = true;
+  state.showLanding = false;
+  state.bankrollSessions = sessions;
+  state.bankrollSummary = summarizeBankrollSessions(sessions);
+  state.bankrollTransactions = transactions;
+  state.bankrollTransactionSummary = summarizeDemoTransactions(transactions);
+  state.imports = demoImports();
+  state.hands = hands;
+  state.players = demoPlayers();
+  state.reviewSpots = demoReviewSpots(hands);
+  state.leaks = [];
+  state.studyTags = demoTagSummary(hands);
+  state.studyPlan = demoStudyPlan(hands);
+  state.selectedSessionId = sessions.at(-1)?.id ?? null;
+  state.selectedHandId = hands[0]?.id ?? null;
+  state.replayStep = 0;
+  if (state.selectedHandId) {
+    setDemoDecisionContext(state.selectedHandId);
+  }
+  render();
+  setView("overview");
+  window.scrollTo(0, 0);
+  if (!quiet) {
+    showToast("Demo mode loaded.");
+  }
+}
+
+async function startTracking({ targetView = "sessions" } = {}) {
+  state.demoMode = false;
+
+  if (auth.enabled && !auth.isSignedIn()) {
+    await auth.signIn();
+    return;
+  }
+
+  state.showLanding = false;
+  window.localStorage.setItem(onboardingStorageKey, "true");
+  await refresh({ quiet: true });
+  setView(targetView);
+  window.scrollTo(0, 0);
+  showToast(targetView === "sessions" ? "Ready for your first session." : "Workspace ready.");
+}
+
+async function exitDemo() {
+  state.demoMode = false;
+  clearDashboardData();
+
+  if (auth.enabled && !auth.isSignedIn()) {
+    state.showLanding = true;
+    render();
+    return;
+  }
+
+  state.showLanding = false;
+  await refresh({ quiet: true });
+}
+
 
 function cardParts(card) {
   const text = String(card ?? "").trim();
@@ -872,8 +1584,19 @@ function renderTags(tags, { interactive = false, activeTags = [] } = {}) {
 function renderSparkline(points) {
   if (!points.length) {
     return bankrollFilterActive()
-      ? '<div class="empty">No bankroll sessions match the current filters.</div>'
-      : '<div class="empty">No bankroll sessions yet.</div>';
+      ? renderEmptyState({
+        title: "No sessions match these filters",
+        body: "Adjust the date, location, game, or stakes filters to bring sessions back into view.",
+        secondaryLabel: "",
+        compact: true
+      })
+      : renderEmptyState({
+        title: "Start building your poker profile",
+        body: "Log a session and Backdoor Flush will start tracking your performance over time.",
+        primaryLabel: "Log First Session",
+        primaryView: "sessions",
+        compact: true
+      });
   }
 
   const values = points.map((point) => point.cumulativeProfit);
@@ -981,6 +1704,15 @@ function renderMetrics() {
       <strong>Study sample</strong>
       <span>${handCount} saved hands: ${liveHands} live-built, ${importedHands} imported, ${linkedHands} linked to bankroll sessions. Hand stats below are review-sample signals, not a complete record of every hand played.</span>
     `;
+  elements.overviewEmpty.hidden = handCount > 0 || state.bankrollSessions.length > 0;
+  elements.overviewEmpty.innerHTML = elements.overviewEmpty.hidden
+    ? ""
+    : renderEmptyState({
+      title: "Start building your poker profile",
+      body: "Log your first session or explore the demo to see how tracking, review, and study connect.",
+      primaryLabel: "Log First Session",
+      primaryView: "sessions"
+    });
   elements.metrics.profit.textContent = formatCurrency(bankrollSummary.totalProfit, {
     compact: true,
     signed: true
@@ -1643,7 +2375,7 @@ function renderPlayerStats() {
     .join("");
 
   if (players.length === 0) {
-    elements.playerStats.innerHTML = '<tr><td colspan="6">No hands loaded yet.</td></tr>';
+    elements.playerStats.innerHTML = '<tr><td colspan="6">Capture hands to see sample player tendencies.</td></tr>';
   }
 }
 
@@ -1677,7 +2409,13 @@ function renderCharts() {
   const positions = positionRows();
 
   if (positions.length === 0) {
-    elements.positionChart.innerHTML = '<div class="empty">Capture hands to see hero-position coverage.</div>';
+    elements.positionChart.innerHTML = renderEmptyState({
+      title: "No captured positions yet",
+      body: "Import or build hands and this chart will show which hero positions your review sample covers.",
+      primaryLabel: "Build Live Hand",
+      primaryView: "live",
+      compact: true
+    });
   } else {
     elements.positionChart.innerHTML = positions
       .map(
@@ -1701,7 +2439,13 @@ function renderCharts() {
   const maxHands = Math.max(1, ...imports.map((item) => item.handCount));
 
   if (imports.length === 0) {
-    elements.importChart.innerHTML = '<div class="empty">No imports yet.</div>';
+    elements.importChart.innerHTML = renderEmptyState({
+      title: "No hand imports yet",
+      body: "Import hand-history text when you want a larger batch of hands to review.",
+      primaryLabel: "Import Hands",
+      primaryView: "imports",
+      compact: true
+    });
     return;
   }
 
@@ -1733,8 +2477,19 @@ function renderBankrollCharts() {
 
   if (locations.length === 0) {
     elements.locationChart.innerHTML = bankrollFilterActive()
-      ? '<div class="empty">No locations match the current filters.</div>'
-      : '<div class="empty">Add sessions to compare locations.</div>';
+      ? renderEmptyState({
+        title: "No locations match these filters",
+        body: "Try a wider date range or remove the location filter.",
+        compact: true,
+        secondaryLabel: ""
+      })
+      : renderEmptyState({
+        title: "No locations yet",
+        body: "Add sessions from the places you play and this chart will compare results by location.",
+        primaryLabel: "Log First Session",
+        primaryView: "sessions",
+        compact: true
+      });
     return;
   }
 
@@ -1759,7 +2514,13 @@ function renderBankrollCharts() {
 
 function renderReviewQueue() {
   if (state.reviewSpots.length === 0) {
-    elements.leakList.innerHTML = '<div class="empty">No hands in the review queue yet.</div>';
+    elements.leakList.innerHTML = renderEmptyState({
+      title: "No hands waiting for review",
+      body: "Save difficult hands, tag important spots, or import a session and they will appear here.",
+      primaryLabel: "Build Live Hand",
+      primaryView: "live",
+      compact: true
+    });
     return;
   }
 
@@ -1795,7 +2556,13 @@ function renderReviewQueue() {
 
 function renderTagSummary() {
   if (state.studyTags.length === 0) {
-    elements.tagSummary.innerHTML = '<div class="empty compact">No tagged hands yet.</div>';
+    elements.tagSummary.innerHTML = renderEmptyState({
+      title: "No tagged hands yet",
+      body: "Tag hands during review and this area will show where your saved hands are winning or losing.",
+      primaryLabel: "Open Hands",
+      primaryView: "hands",
+      compact: true
+    });
     return;
   }
 
@@ -1815,7 +2582,13 @@ function renderTagSummary() {
 
 function renderStudyPlan() {
   if (state.studyPlan.length === 0) {
-    elements.studyPlan.innerHTML = '<div class="empty compact">No study plan yet.</div>';
+    elements.studyPlan.innerHTML = renderEmptyState({
+      title: "No study focus yet",
+      body: "Keep logging and reviewing hands to unlock a focused list of spots to work on next.",
+      primaryLabel: "Open Review",
+      primaryView: "hands",
+      compact: true
+    });
     return;
   }
 
@@ -1955,7 +2728,12 @@ function renderTransactions() {
   `;
 
   if (state.bankrollTransactions.length === 0) {
-    elements.transactionList.innerHTML = '<div class="empty compact">No bankroll transactions yet.</div>';
+    elements.transactionList.innerHTML = renderEmptyState({
+      title: "No bankroll transactions yet",
+      body: "Use transactions for deposits, withdrawals, transfers, or a starting bankroll balance.",
+      secondaryLabel: "",
+      compact: true
+    });
     return;
   }
 
@@ -2049,8 +2827,19 @@ function renderSessionDetail(visibleSessions = state.bankrollSessions) {
 
   if (!selectedSession) {
     elements.sessionDetail.innerHTML = bankrollFilterActive()
-      ? '<div class="empty">Select a matching session to see linked imports and hands.</div>'
-      : '<div class="empty">Select a session to see linked imports and hands.</div>';
+      ? renderEmptyState({
+        title: "Select a matching session",
+        body: "Session details show linked imports, saved hands, and the largest swings for the selected session.",
+        secondaryLabel: "",
+        compact: true
+      })
+      : renderEmptyState({
+        title: "Session details will appear here",
+        body: "Choose a session after logging one to connect bankroll results with saved hands.",
+        primaryLabel: "Log First Session",
+        primaryView: "sessions",
+        compact: true
+      });
     return;
   }
 
@@ -2130,8 +2919,21 @@ function renderSessions() {
 
   if (sessions.length === 0) {
     elements.sessionList.innerHTML = bankrollFilterActive()
-      ? '<div class="empty">No sessions match the current filters.</div>'
-      : '<div class="empty">No bankroll sessions yet.</div>';
+      ? renderEmptyState({
+        title: "No sessions match these filters",
+        body: "Widen the filter range or reset filters from the Overview page.",
+        primaryLabel: "Overview",
+        primaryView: "overview",
+        secondaryLabel: "",
+        compact: true
+      })
+      : renderEmptyState({
+        title: "Log your first session",
+        body: "Add where you played, the stakes, hours, buy-in, and cash-out to start tracking your results.",
+        primaryLabel: "Use Session Form",
+        primaryView: "sessions",
+        compact: true
+      });
     renderSessionDetail(sessions);
     return;
   }
@@ -2256,7 +3058,22 @@ function renderHands() {
   renderHandLibrarySummary(hands);
 
   if (hands.length === 0) {
-    elements.handList.innerHTML = '<div class="empty">No matching hands.</div>';
+    elements.handList.innerHTML = state.hands.length === 0
+      ? renderEmptyState({
+        title: "Capture the hands that matter",
+        body: "Import hand histories or build a live hand so important decisions are ready for review later.",
+        primaryLabel: "Build Live Hand",
+        primaryView: "live",
+        secondaryLabel: "Import Hands",
+        secondaryView: "imports",
+        compact: true
+      })
+      : renderEmptyState({
+        title: "No hands match these filters",
+        body: "Try a broader tag, position, session, review, or result filter.",
+        secondaryLabel: "",
+        compact: true
+      });
     return;
   }
 
@@ -2563,7 +3380,20 @@ function renderHandDetail() {
   const hand = state.hands.find((item) => item.id === state.selectedHandId);
 
   if (!hand) {
-    elements.handDetail.innerHTML = '<div class="empty">Select a hand to review the action.</div>';
+    elements.handDetail.innerHTML = state.hands.length === 0
+      ? renderEmptyState({
+        title: "No hand selected",
+        body: "Saved hands open here with replay, notes, tags, similar spots, and decision review.",
+        primaryLabel: "Build Live Hand",
+        primaryView: "live",
+        compact: true
+      })
+      : renderEmptyState({
+        title: "Select a hand",
+        body: "Choose a saved hand to replay the action and review the decision points.",
+        secondaryLabel: "",
+        compact: true
+      });
     return;
   }
 
@@ -2647,7 +3477,13 @@ function renderHandDetail() {
 
 function renderImports() {
   if (state.imports.length === 0) {
-    elements.importList.innerHTML = '<div class="empty">No imports yet.</div>';
+    elements.importList.innerHTML = renderEmptyState({
+      title: "No imports yet",
+      body: "Paste or upload hand-history text to create a larger review sample.",
+      primaryLabel: "Use Import Form",
+      primaryView: "imports",
+      compact: true
+    });
     return;
   }
 
@@ -2729,6 +3565,14 @@ function render() {
 }
 
 async function refresh({ quiet = false } = {}) {
+  if (state.demoMode) {
+    render();
+    if (!quiet) {
+      showToast("Demo mode is already loaded.");
+    }
+    return;
+  }
+
   if (!canUsePrivateApi()) {
     clearDashboardData();
     render();
@@ -2811,6 +3655,13 @@ async function refresh({ quiet = false } = {}) {
 }
 
 async function loadReviewQueue() {
+  if (state.demoMode) {
+    renderMetrics();
+    renderReviewQueue();
+    renderSessions();
+    return;
+  }
+
   const payload = await api(reviewQueuePath());
   state.reviewSpots = payload.spots;
   renderMetrics();
@@ -2819,6 +3670,12 @@ async function loadReviewQueue() {
 }
 
 async function loadSimilarHands(handId) {
+  if (state.demoMode) {
+    setDemoDecisionContext(handId);
+    renderHandDetail();
+    return;
+  }
+
   state.similarForHandId = null;
   state.similarHands = [];
   renderHandDetail();
@@ -2834,6 +3691,12 @@ async function loadSimilarHands(handId) {
 }
 
 async function loadDecisionReview(handId) {
+  if (state.demoMode) {
+    setDemoDecisionContext(handId);
+    renderHandDetail();
+    return;
+  }
+
   state.decisionReportForHandId = null;
   state.decisionReport = null;
   renderHandDetail();
@@ -2852,6 +3715,11 @@ async function loadDecisionReview(handId) {
 }
 
 async function loadStudyPlan() {
+  if (state.demoMode) {
+    renderStudyPlan();
+    return;
+  }
+
   const payload = await api("/api/study/plan");
   state.studyPlan = payload.items;
   renderStudyPlan();
@@ -2861,6 +3729,14 @@ async function selectHand(handId) {
   state.selectedHandId = handId;
   state.replayStep = 0;
   state.selectedDecisionId = null;
+
+  if (state.demoMode) {
+    setDemoDecisionContext(handId);
+    renderHands();
+    renderHandDetail();
+    return;
+  }
+
   renderHands();
   renderHandDetail();
   await Promise.all([
@@ -2920,6 +3796,40 @@ function bankrollPreviewSummary(payload) {
 
   return parts.join(" / ");
 }
+
+document.addEventListener("click", (event) => {
+  const startTarget = event.target.closest("[data-start-tracking]");
+  if (startTarget) {
+    event.preventDefault();
+    startTracking().catch((error) => showToast(error.message));
+    return;
+  }
+
+  const demoTarget = event.target.closest("[data-load-demo]");
+  if (demoTarget) {
+    event.preventDefault();
+    loadDemoExperience();
+    return;
+  }
+
+  const exitTarget = event.target.closest("[data-exit-demo], #exit-demo");
+  if (exitTarget) {
+    event.preventDefault();
+    exitDemo().catch((error) => showToast(error.message));
+    return;
+  }
+
+  const viewTarget = event.target.closest("[data-jump-view]");
+  if (viewTarget) {
+    event.preventDefault();
+    if (state.showLanding) {
+      startTracking({ targetView: viewTarget.dataset.jumpView }).catch((error) => showToast(error.message));
+      return;
+    }
+
+    setView(viewTarget.dataset.jumpView);
+  }
+});
 
 elements.navButtons.forEach((button) => {
   button.addEventListener("click", () => setView(button.dataset.view));
@@ -3083,6 +3993,11 @@ elements.liveActionList.addEventListener("click", (event) => {
 });
 
 elements.loadDemo.addEventListener("click", async () => {
+  if (state.demoMode) {
+    loadDemoExperience();
+    return;
+  }
+
   try {
     const sessionParam = state.selectedSessionId ? `?sessionId=${encodeURIComponent(state.selectedSessionId)}` : "";
     const payload = await api(`/api/demo${sessionParam}`, { method: "POST" });
@@ -3100,6 +4015,12 @@ elements.loadDemo.addEventListener("click", async () => {
 });
 
 elements.clearSession.addEventListener("click", async () => {
+  if (state.demoMode) {
+    await exitDemo();
+    showToast("Exited demo mode.");
+    return;
+  }
+
   if (!window.confirm("Clear all imported hands from this workspace?")) {
     return;
   }
@@ -3736,11 +4657,14 @@ elements.equityForm.addEventListener("submit", async (event) => {
 });
 
 elements.signIn.addEventListener("click", () => {
+  state.demoMode = false;
   auth.signIn().catch((error) => showToast(error.message));
 });
 
 elements.signOut.addEventListener("click", () => {
   auth.signOut();
+  state.demoMode = false;
+  state.showLanding = true;
   clearDashboardData();
   render();
 });
@@ -3759,7 +4683,11 @@ async function boot() {
     showToast(error.message);
   }
 
-  if (canUsePrivateApi()) {
+  state.showLanding = auth.enabled
+    ? !auth.isSignedIn()
+    : window.localStorage.getItem(onboardingStorageKey) !== "true";
+
+  if (!state.showLanding && canUsePrivateApi()) {
     await refresh();
     return;
   }
