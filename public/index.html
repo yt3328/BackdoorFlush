@@ -117,6 +117,7 @@
 
         <nav class="nav" aria-label="Dashboard views">
           <button class="nav-button active" data-view="overview">Home</button>
+          <button class="nav-button" data-view="review">Review</button>
           <button class="nav-button" data-view="sessions">Sessions</button>
           <button class="nav-button" data-view="hands">Hands</button>
           <button class="nav-button" data-view="live">Live Hand</button>
@@ -399,6 +400,63 @@
                 </div>
                 <div id="study-plan" class="study-plan"></div>
               </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="view-review">
+          <section class="panel review-command" aria-labelledby="review-command-title">
+            <div class="review-command-head">
+              <div>
+                <p class="eyebrow">Review Session</p>
+                <h3 id="review-command-title">Work the Queue</h3>
+              </div>
+              <div class="review-command-controls">
+                <select id="review-workflow-status" aria-label="Review workflow status">
+                  <option value="false">Open</option>
+                  <option value="">All</option>
+                  <option value="true">Reviewed</option>
+                </select>
+                <select id="review-workflow-sort" aria-label="Review workflow sort">
+                  <option value="priority">Priority</option>
+                  <option value="biggest-loss">Loss</option>
+                  <option value="biggest-pot">Pot</option>
+                  <option value="newest">Newest</option>
+                </select>
+                <select id="review-batch-size" aria-label="Review batch size">
+                  <option value="3">3 hands</option>
+                  <option value="5" selected>5 hands</option>
+                  <option value="10">10 hands</option>
+                </select>
+              </div>
+            </div>
+            <div id="review-session-summary" class="review-session-summary"></div>
+          </section>
+
+          <div class="split review-workspace">
+            <section class="panel review-queue-panel">
+              <div class="panel-head">
+                <div>
+                  <h3>Queue</h3>
+                  <p class="panel-note">Open hands are ordered by the selected priority model.</p>
+                </div>
+                <div class="review-session-actions">
+                  <button id="review-start-session" class="button" type="button">Start Session</button>
+                  <button id="review-clear-session" class="button secondary" type="button">End</button>
+                </div>
+              </div>
+              <div id="review-progress" class="review-progress"></div>
+              <div id="review-flow-list" class="review-flow-list"></div>
+            </section>
+
+            <section class="panel review-hand-panel">
+              <div class="panel-head">
+                <div>
+                  <h3>Current Hand</h3>
+                </div>
+                <div id="review-hand-nav" class="review-hand-nav"></div>
+              </div>
+              <div id="review-hand-detail" class="hand-detail review-hand-detail"></div>
             </section>
           </div>
         </section>

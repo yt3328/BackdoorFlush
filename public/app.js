@@ -11,6 +11,7 @@ const streetLabels = {
 };
 const viewTitles = {
   overview: "Home",
+  review: "Review",
   sessions: "Sessions",
   hands: "Hands",
   live: "Live Hand",
@@ -32,7 +33,13 @@ const suggestedReviewTags = [
   "3-bet-pot",
   "multiway",
   "all-in",
-  "live-hand"
+  "live-hand",
+  "sizing",
+  "range",
+  "missed-value",
+  "thin-value",
+  "overbluff",
+  "position"
 ];
 const onboardingStorageKey = "backdoor-flush.onboarding-entered";
 const liveTableSizes = [2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -146,6 +153,17 @@ const state = {
   players: [],
   leaks: [],
   reviewSpots: [],
+  reviewFilters: {
+    reviewed: "false",
+    sort: "priority"
+  },
+  reviewSession: {
+    active: false,
+    queueIds: [],
+    cursor: 0,
+    batchSize: 5,
+    startedAt: null
+  },
   studyTags: [],
   studyPlan: [],
   similarHands: [],
@@ -194,6 +212,16 @@ const elements = {
   handLibrarySummary: document.querySelector("#hand-library-summary"),
   reviewStatusFilter: document.querySelector("#review-status-filter"),
   reviewSort: document.querySelector("#review-sort"),
+  reviewWorkflowStatus: document.querySelector("#review-workflow-status"),
+  reviewWorkflowSort: document.querySelector("#review-workflow-sort"),
+  reviewBatchSize: document.querySelector("#review-batch-size"),
+  reviewStartSession: document.querySelector("#review-start-session"),
+  reviewClearSession: document.querySelector("#review-clear-session"),
+  reviewSessionSummary: document.querySelector("#review-session-summary"),
+  reviewProgress: document.querySelector("#review-progress"),
+  reviewFlowList: document.querySelector("#review-flow-list"),
+  reviewHandNav: document.querySelector("#review-hand-nav"),
+  reviewHandDetail: document.querySelector("#review-hand-detail"),
   playerStats: document.querySelector("#player-stats"),
   leakList: document.querySelector("#leak-list"),
   tagSummary: document.querySelector("#tag-summary"),
@@ -338,6 +366,17 @@ function clearDashboardData() {
   state.players = [];
   state.leaks = [];
   state.reviewSpots = [];
+  state.reviewFilters = {
+    reviewed: "false",
+    sort: "priority"
+  };
+  state.reviewSession = {
+    active: false,
+    queueIds: [],
+    cursor: 0,
+    batchSize: 5,
+    startedAt: null
+  };
   state.studyTags = [];
   state.studyPlan = [];
   state.similarHands = [];
@@ -366,8 +405,8 @@ function renderAuthState() {
     : state.demoMode
       ? "Demo mode"
       : "Local mode";
-  elements.signIn.hidden = !auth.enabled || signedIn;
-  elements.signOut.hidden = !auth.enabled || !signedIn;
+  elements.signIn.hidden = !auth.enabled || signedIn || state.demoMode;
+  elements.signOut.hidden = !auth.enabled || !signedIn || state.demoMode;
   elements.authNotice.hidden = !needsSignIn;
   elements.demoBanner.hidden = !state.demoMode;
   elements.loadDemo.textContent = state.demoMode ? "Reload Demo" : "Explore Demo";
@@ -894,23 +933,60 @@ function demoReviewReasons(hand) {
   return ["Saved for review"];
 }
 
-function demoReviewSpots(hands) {
-  return hands
-    .filter((hand) => !hand.reviewedAt)
-    .map((hand) => ({
-      id: hand.id,
-      sessionId: hand.sessionId,
-      handNumber: hand.handNumber,
-      tableName: hand.tableName,
-      reasons: demoReviewReasons(hand),
-      estimatedHeroResult: estimatedHeroResult(hand),
-      heroCards: hand.hero ? hand.holeCards[hand.hero] ?? [] : [],
-      board: hand.board ?? [],
-      tags: hand.tags ?? [],
-      reviewedAt: hand.reviewedAt,
-      priority: Math.abs(estimatedHeroResult(hand))
-    }))
-    .sort((a, b) => b.priority - a.priority);
+function clientReviewSpot(hand) {
+  const pot = trackedPot(hand);
+  const result = estimatedHeroResult(hand);
+  const tags = handTags(hand);
+  const priority = Math.abs(result) * 2 + pot * 0.35 + (hand.reviewedAt ? -8 : 12) + tags.length * 2;
+
+  return {
+    id: hand.id,
+    sessionId: hand.sessionId,
+    handNumber: hand.handNumber,
+    tableName: hand.tableName,
+    reasons: demoReviewReasons(hand),
+    estimatedHeroResult: result,
+    trackedPot: pot,
+    heroCards: hand.hero ? hand.holeCards[hand.hero] ?? [] : [],
+    board: hand.board ?? [],
+    tags,
+    reviewedAt: hand.reviewedAt,
+    importedAt: hand.importedAt ?? hand.createdAt ?? null,
+    priority,
+    score: priority
+  };
+}
+
+function compareReviewSpots(a, b, sort = "priority") {
+  if (sort === "biggest-loss") {
+    return a.estimatedHeroResult - b.estimatedHeroResult;
+  }
+
+  if (sort === "biggest-win") {
+    return b.estimatedHeroResult - a.estimatedHeroResult;
+  }
+
+  if (sort === "biggest-pot") {
+    return (b.trackedPot ?? 0) - (a.trackedPot ?? 0);
+  }
+
+  if (sort === "newest") {
+    return String(b.importedAt ?? "").localeCompare(String(a.importedAt ?? ""));
+  }
+
+  return (b.score ?? b.priority ?? 0) - (a.score ?? a.priority ?? 0) || Math.abs(b.estimatedHeroResult) - Math.abs(a.estimatedHeroResult);
+}
+
+function demoReviewSpots(hands, filters = state.reviewFilters) {
+  let spots = hands.map(clientReviewSpot);
+
+  if (filters.reviewed === "true") {
+    spots = spots.filter((spot) => Boolean(spot.reviewedAt));
+  } else if (filters.reviewed === "false") {
+    spots = spots.filter((spot) => !spot.reviewedAt);
+  }
+
+  return spots.sort((a, b) => compareReviewSpots(a, b, filters.sort));
 }
 
 function demoTagSummary(hands) {
@@ -984,9 +1060,11 @@ function demoDecisionReport(hand) {
     const potBefore = trackedPotAt(hand, index);
     const isRiverCall = action.street === "river" && action.type === "calls";
     const isLargeBet = amount > 0 && potBefore > 0 && amount / potBefore > 0.65;
+    const id = `${hand.id}-decision-${decisionIndex + 1}`;
+    const savedReview = hand.decisionReviews?.[id] ?? {};
 
     return {
-      id: `${hand.id}-decision-${decisionIndex + 1}`,
+      id,
       street: action.street,
       actionType: action.type,
       player: action.player,
@@ -1001,16 +1079,18 @@ function demoDecisionReport(hand) {
         ...(isLargeBet ? ["Large sizing"] : [])
       ],
       promptIds: isRiverCall ? ["range", "price"] : ["plan"],
-      note: "",
-      checklist: {},
-      reviewedAt: null
+      note: savedReview.note ?? "",
+      checklist: savedReview.checklist ?? {},
+      reviewedAt: savedReview.reviewedAt ?? null,
+      updatedAt: savedReview.updatedAt ?? null
     };
   });
 
   return {
     summary: {
       decisionCount: decisions.length,
-      reviewedCount: 0,
+      reviewedCount: decisions.filter((decision) => decision.reviewedAt).length,
+      openCount: decisions.filter((decision) => !decision.reviewedAt).length,
       flaggedCount: decisions.filter((decision) => decision.flags.length).length
     },
     prompts: [
@@ -1095,7 +1175,11 @@ async function startTracking({ targetView = "sessions" } = {}) {
   state.showLanding = false;
   window.localStorage.setItem(onboardingStorageKey, "true");
   await refresh({ quiet: true });
-  setView(targetView);
+  if (targetView === "review") {
+    await openReviewView();
+  } else {
+    setView(targetView);
+  }
   window.scrollTo(0, 0);
   showToast(targetView === "sessions" ? "Ready for your first session." : "Workspace ready.");
 }
@@ -1646,10 +1730,10 @@ function handDateValue(hand) {
 
 function reviewQueuePath() {
   const params = new URLSearchParams({
-    limit: "12",
-    sort: elements.reviewSort?.value || "priority"
+    limit: "50",
+    sort: state.reviewFilters.sort || "priority"
   });
-  const reviewed = elements.reviewStatusFilter?.value ?? "false";
+  const reviewed = state.reviewFilters.reviewed ?? "false";
 
   if (reviewed) {
     params.set("reviewed", reviewed);
@@ -2609,11 +2693,38 @@ function renderBankrollCharts() {
     .join("");
 }
 
+function handById(id) {
+  return state.hands.find((hand) => hand.id === id) ?? null;
+}
+
+function renderReviewFilterControls() {
+  const statusControls = [elements.reviewStatusFilter, elements.reviewWorkflowStatus].filter(Boolean);
+  const sortControls = [elements.reviewSort, elements.reviewWorkflowSort].filter(Boolean);
+
+  for (const control of statusControls) {
+    control.value = ["", "true", "false"].includes(state.reviewFilters.reviewed)
+      ? state.reviewFilters.reviewed
+      : "false";
+  }
+
+  for (const control of sortControls) {
+    control.value = ["priority", "biggest-loss", "biggest-win", "biggest-pot", "newest"].includes(state.reviewFilters.sort)
+      ? state.reviewFilters.sort
+      : "priority";
+  }
+
+  elements.reviewBatchSize.value = String(state.reviewSession.batchSize || 5);
+}
+
 function renderReviewQueue() {
   if (state.reviewSpots.length === 0) {
+    const reviewedOnly = state.reviewFilters.reviewed === "true";
+    const allHands = state.reviewFilters.reviewed === "";
     elements.leakList.innerHTML = renderEmptyState({
-      title: "No hands waiting for review",
-      body: "Save difficult hands, tag important spots, or import a session and they will appear here.",
+      title: reviewedOnly ? "No reviewed hands in this view" : allHands ? "No review hands in this view" : "No hands waiting for review",
+      body: reviewedOnly
+        ? "Marked hands appear here after review work is saved."
+        : "Save difficult hands, tag important spots, or import a session and they will appear here.",
       primaryLabel: "Build Live Hand",
       primaryView: "live",
       compact: true
@@ -2622,6 +2733,7 @@ function renderReviewQueue() {
   }
 
   elements.leakList.innerHTML = state.reviewSpots
+    .slice(0, 12)
     .map(
       (spot) => `
         <article class="review-spot">
@@ -2649,6 +2761,348 @@ function renderReviewQueue() {
       `
     )
     .join("");
+}
+
+function reviewSpotById(id) {
+  return state.reviewSpots.find((spot) => spot.id === id) ?? (handById(id) ? clientReviewSpot(handById(id)) : null);
+}
+
+function reviewQueueIds() {
+  return state.reviewSpots
+    .map((spot) => spot.id)
+    .filter((id) => Boolean(handById(id)));
+}
+
+function activeReviewQueueIds() {
+  if (!state.reviewSession.active) {
+    return reviewQueueIds();
+  }
+
+  return state.reviewSession.queueIds.filter((id) => Boolean(handById(id)));
+}
+
+function reviewQueueCursor() {
+  const ids = activeReviewQueueIds();
+  const selectedIndex = ids.indexOf(state.selectedHandId);
+
+  if (selectedIndex >= 0) {
+    return selectedIndex;
+  }
+
+  return Math.max(0, Math.min(state.reviewSession.cursor, ids.length - 1));
+}
+
+function reviewQueueProgress(ids = activeReviewQueueIds()) {
+  const reviewedCount = ids.filter((id) => handById(id)?.reviewedAt).length;
+
+  return {
+    total: ids.length,
+    reviewedCount,
+    openCount: ids.length - reviewedCount,
+    pct: ids.length === 0 ? 0 : Math.round((reviewedCount / ids.length) * 100)
+  };
+}
+
+function reviewedThisWeekCount() {
+  const start = dateKey(daysBefore(new Date(`${currentDateKey()}T12:00:00`), 7));
+
+  return state.hands.filter((hand) => hand.reviewedAt && String(hand.reviewedAt).slice(0, 10) >= start).length;
+}
+
+function startReviewSession({ initialHandId = "" } = {}) {
+  const batchSize = Number(elements.reviewBatchSize.value || state.reviewSession.batchSize || 5);
+  const ids = reviewQueueIds();
+  const queueIds = ids.slice(0, Math.max(1, batchSize));
+
+  if (initialHandId && !queueIds.includes(initialHandId) && handById(initialHandId)) {
+    queueIds.unshift(initialHandId);
+  }
+
+  state.reviewSession = {
+    active: queueIds.length > 0,
+    queueIds,
+    cursor: Math.max(0, queueIds.indexOf(initialHandId)),
+    batchSize,
+    startedAt: queueIds.length > 0 ? new Date().toISOString() : null
+  };
+
+  return queueIds[state.reviewSession.cursor] ?? queueIds[0] ?? null;
+}
+
+function endReviewSession() {
+  state.reviewSession = {
+    active: false,
+    queueIds: [],
+    cursor: 0,
+    batchSize: Number(elements.reviewBatchSize.value || state.reviewSession.batchSize || 5),
+    startedAt: null
+  };
+}
+
+function nextReviewIndexAfter(currentId) {
+  const ids = activeReviewQueueIds();
+  const currentIndex = Math.max(0, ids.indexOf(currentId));
+
+  for (let index = currentIndex + 1; index < ids.length; index += 1) {
+    if (!handById(ids[index])?.reviewedAt) {
+      return index;
+    }
+  }
+
+  for (let index = 0; index <= currentIndex; index += 1) {
+    if (!handById(ids[index])?.reviewedAt) {
+      return index;
+    }
+  }
+
+  return ids.length > 0 ? Math.min(currentIndex + 1, ids.length - 1) : -1;
+}
+
+async function moveReviewSelection(direction) {
+  const ids = activeReviewQueueIds();
+  if (ids.length === 0) {
+    renderReviewWorkflow();
+    return;
+  }
+
+  const nextIndex = Math.max(0, Math.min(ids.length - 1, reviewQueueCursor() + direction));
+  state.reviewSession.cursor = nextIndex;
+  await selectHand(ids[nextIndex]);
+}
+
+async function advanceReviewAfter(currentId) {
+  const ids = activeReviewQueueIds();
+  const progress = reviewQueueProgress(ids);
+
+  if (ids.length === 0 || progress.openCount === 0) {
+    renderReviewWorkflow();
+    showToast("Review session complete.");
+    return;
+  }
+
+  const nextIndex = nextReviewIndexAfter(currentId);
+  if (nextIndex < 0) {
+    renderReviewWorkflow();
+    return;
+  }
+
+  state.reviewSession.cursor = nextIndex;
+  await selectHand(ids[nextIndex]);
+}
+
+function refreshDemoReviewState() {
+  state.reviewSpots = demoReviewSpots(state.hands);
+  state.studyTags = demoTagSummary(state.hands);
+  state.studyPlan = demoStudyPlan(state.hands);
+
+  if (state.selectedHandId) {
+    setDemoDecisionContext(state.selectedHandId);
+  }
+}
+
+async function saveHandReviewPatch(hand, body) {
+  if (state.demoMode) {
+    const reviewedValue = body.reviewed;
+    const updatedHand = {
+      ...hand,
+      tags: body.tags === undefined ? handTags(hand) : [...new Set(body.tags.map(normalizeTag).filter(Boolean))],
+      notes: body.notes === undefined ? hand.notes ?? "" : String(body.notes ?? "").trim(),
+      reviewedAt: reviewedValue === true
+        ? hand.reviewedAt || new Date().toISOString()
+        : reviewedValue === false
+          ? null
+          : hand.reviewedAt ?? null,
+      reviewUpdatedAt: new Date().toISOString()
+    };
+    state.hands = state.hands.map((item) => item.id === hand.id ? updatedHand : item);
+    refreshDemoReviewState();
+    return {
+      hand: updatedHand
+    };
+  }
+
+  return api(`/api/hands/${encodeURIComponent(hand.id)}`, {
+    method: "PATCH",
+    body
+  });
+}
+
+async function saveDecisionReviewPatch(hand, decisionId, body) {
+  if (state.demoMode) {
+    const existingReviews = hand.decisionReviews && typeof hand.decisionReviews === "object"
+      ? hand.decisionReviews
+      : {};
+    const existing = existingReviews[decisionId] ?? {};
+    const reviewedValue = body.reviewed;
+    const nextReview = {
+      note: String(body.note ?? existing.note ?? "").trim(),
+      checklist: body.checklist ?? existing.checklist ?? {},
+      reviewedAt: reviewedValue === true
+        ? existing.reviewedAt || new Date().toISOString()
+        : reviewedValue === false
+          ? null
+          : existing.reviewedAt ?? null,
+      updatedAt: new Date().toISOString()
+    };
+    const updatedHand = {
+      ...hand,
+      decisionReviews: {
+        ...existingReviews,
+        [decisionId]: nextReview
+      },
+      decisionReviewUpdatedAt: new Date().toISOString()
+    };
+    state.hands = state.hands.map((item) => item.id === hand.id ? updatedHand : item);
+    setDemoDecisionContext(hand.id);
+
+    return {
+      hand: updatedHand,
+      report: state.decisionReport,
+      review: nextReview
+    };
+  }
+
+  return api(`/api/hands/${encodeURIComponent(hand.id)}/decisions/${encodeURIComponent(decisionId)}`, {
+    method: "PATCH",
+    body
+  });
+}
+
+function renderReviewSessionSummary() {
+  const activeIds = activeReviewQueueIds();
+  const progress = reviewQueueProgress(activeIds);
+  const allOpen = state.hands.filter((hand) => !hand.reviewedAt).length;
+  const allReviewed = state.hands.length - allOpen;
+
+  elements.reviewSessionSummary.innerHTML = `
+    <div class="review-kpis">
+      <div>
+        <span class="subtle">Open</span>
+        <strong>${allOpen}</strong>
+      </div>
+      <div>
+        <span class="subtle">${state.reviewSession.active ? "Session" : "Queue"}</span>
+        <strong>${activeIds.length}</strong>
+      </div>
+      <div>
+        <span class="subtle">Reviewed</span>
+        <strong>${allReviewed}</strong>
+      </div>
+      <div>
+        <span class="subtle">This Week</span>
+        <strong>${reviewedThisWeekCount()}</strong>
+      </div>
+    </div>
+    <p class="review-scope-note">${escapeHtml(state.reviewSession.active ? "Active review session" : "Queue view")} / ${escapeHtml(state.reviewFilters.sort.replaceAll("-", " "))}</p>
+  `;
+}
+
+function renderReviewProgress() {
+  const ids = activeReviewQueueIds();
+  const progress = reviewQueueProgress(ids);
+
+  if (state.hands.length === 0) {
+    elements.reviewProgress.innerHTML = renderEmptyState({
+      title: "No hands captured yet",
+      body: "Build or import hands before starting a review session.",
+      primaryLabel: "Build Live Hand",
+      primaryView: "live",
+      secondaryLabel: "Import Hands",
+      secondaryView: "imports",
+      compact: true
+    });
+    elements.reviewHandNav.innerHTML = "";
+    return;
+  }
+
+  if (ids.length === 0) {
+    elements.reviewProgress.innerHTML = renderEmptyState({
+      title: "No hands in this queue",
+      body: "Change the status or sort controls to bring hands back into view.",
+      secondaryLabel: "",
+      compact: true
+    });
+    elements.reviewHandNav.innerHTML = "";
+    return;
+  }
+
+  elements.reviewProgress.innerHTML = `
+    <article class="review-progress-card">
+      <div>
+        <span class="subtle">${state.reviewSession.active ? "Session progress" : "Queue progress"}</span>
+        <strong>${progress.reviewedCount} / ${progress.total} reviewed</strong>
+      </div>
+      <div class="progress-track" aria-hidden="true">
+        <span style="width: ${progress.pct}%"></span>
+      </div>
+      <p>${progress.openCount} open / ${progress.pct}% complete</p>
+    </article>
+  `;
+
+  elements.reviewHandNav.innerHTML = `
+    <button class="button secondary" type="button" data-review-move="-1" ${reviewQueueCursor() <= 0 ? "disabled" : ""}>Prev</button>
+    <button class="button secondary" type="button" data-review-move="1" ${reviewQueueCursor() >= ids.length - 1 ? "disabled" : ""}>Next</button>
+  `;
+}
+
+function renderReviewFlowList() {
+  const ids = activeReviewQueueIds();
+
+  if (ids.length === 0) {
+    elements.reviewFlowList.innerHTML = "";
+    return;
+  }
+
+  elements.reviewFlowList.innerHTML = ids
+    .map((id, index) => {
+      const hand = handById(id);
+      const spot = reviewSpotById(id);
+      const active = id === state.selectedHandId ? "active" : "";
+      const reviewed = hand?.reviewedAt ? "reviewed" : "";
+      const reasons = spot?.reasons ?? [];
+
+      return `
+        <button class="review-flow-row ${active} ${reviewed}" type="button" data-review-select="${escapeHtml(id)}">
+          <span class="review-flow-index">${index + 1}</span>
+          <span class="review-flow-main">
+            <strong>#${escapeHtml(spot?.handNumber ?? hand?.handNumber ?? id)}</strong>
+            <small>${escapeHtml(reasons.join(" / ") || "Saved hand")}</small>
+          </span>
+          <span class="review-flow-meta">
+            <em>${formatCurrency(spot?.estimatedHeroResult ?? estimatedHeroResult(hand), { signed: true })}</em>
+            <small>${hand?.reviewedAt ? "reviewed" : "open"}</small>
+          </span>
+        </button>
+      `;
+    })
+    .join("");
+}
+
+function renderReviewHandWorkspace() {
+  const hand = handById(state.selectedHandId);
+
+  if (!hand) {
+    elements.reviewHandDetail.innerHTML = renderEmptyState({
+      title: "Select a hand",
+      body: "Choose a hand from the queue to replay it and work through the review.",
+      secondaryLabel: "",
+      compact: true
+    });
+    return;
+  }
+
+  elements.reviewHandDetail.innerHTML = handDetailHtml(hand, {
+    reviewMode: true,
+    spot: reviewSpotById(hand.id)
+  });
+}
+
+function renderReviewWorkflow() {
+  renderReviewFilterControls();
+  renderReviewSessionSummary();
+  renderReviewProgress();
+  renderReviewFlowList();
+  renderReviewHandWorkspace();
 }
 
 function renderTagSummary() {
@@ -2683,7 +3137,7 @@ function renderStudyPlan() {
       title: "No study focus yet",
       body: "Keep logging and reviewing hands to unlock a focused list of spots to work on next.",
       primaryLabel: "Open Review",
-      primaryView: "hands",
+      primaryView: "review",
       compact: true
     });
     return;
@@ -3573,7 +4027,7 @@ function decisionReportFor(hand) {
   return state.decisionReportForHandId === hand.id ? state.decisionReport : null;
 }
 
-function renderDecisionReview(hand) {
+function renderDecisionReview(hand, { reviewMode = false } = {}) {
   const report = decisionReportFor(hand);
 
   if (!report) {
@@ -3664,6 +4118,7 @@ function renderDecisionReview(hand) {
         <div class="form-actions">
           <button class="button" type="button" data-save-decision>Save Decision</button>
           <button class="button secondary" type="button" data-mark-decision-reviewed>Mark Reviewed</button>
+          ${reviewMode ? '<button class="button secondary" type="button" data-mark-decision-reviewed-next>Mark & Next</button>' : ""}
           <button class="button ghost" type="button" data-clear-decision-reviewed>Reopen</button>
         </div>
       </article>
@@ -3671,27 +4126,24 @@ function renderDecisionReview(hand) {
   `;
 }
 
-function renderHandDetail() {
-  const hand = state.hands.find((item) => item.id === state.selectedHandId);
+function emptyHandDetailHtml() {
+  return state.hands.length === 0
+    ? renderEmptyState({
+      title: "No hand selected",
+      body: "Saved hands open here with replay, notes, tags, similar spots, and decision review.",
+      primaryLabel: "Build Live Hand",
+      primaryView: "live",
+      compact: true
+    })
+    : renderEmptyState({
+      title: "Select a hand",
+      body: "Choose a saved hand to replay the action and review the decision points.",
+      secondaryLabel: "",
+      compact: true
+    });
+}
 
-  if (!hand) {
-    elements.handDetail.innerHTML = state.hands.length === 0
-      ? renderEmptyState({
-        title: "No hand selected",
-        body: "Saved hands open here with replay, notes, tags, similar spots, and decision review.",
-        primaryLabel: "Build Live Hand",
-        primaryView: "live",
-        compact: true
-      })
-      : renderEmptyState({
-        title: "Select a hand",
-        body: "Choose a saved hand to replay the action and review the decision points.",
-        secondaryLabel: "",
-        compact: true
-      });
-    return;
-  }
-
+function handDetailHtml(hand, { reviewMode = false, spot = null } = {}) {
   const heroCards = hand.hero ? hand.holeCards[hand.hero] : [];
   const activeTags = handTags(hand);
   const reviewTags = [...new Set([...suggestedReviewTags, ...activeTags])];
@@ -3732,7 +4184,22 @@ function renderHandDetail() {
     )
     .join("");
 
-  elements.handDetail.innerHTML = `
+  const reviewContext = reviewMode && spot
+    ? `
+      <section class="review-context-strip">
+        <div>
+          <span class="subtle">Why this hand</span>
+          <strong>${escapeHtml((spot.reasons ?? []).join(" / ") || "Saved for review")}</strong>
+        </div>
+        <div>
+          <span class="subtle">Tracked pot</span>
+          <strong>${formatCurrency(spot.trackedPot ?? trackedPot(hand))}</strong>
+        </div>
+      </section>
+    `
+    : "";
+
+  return `
     <article class="detail-summary">
       <div>
         <span class="subtle">Hand</span>
@@ -3743,6 +4210,7 @@ function renderHandDetail() {
         <strong>${escapeHtml(hand.hero ?? "Unknown")}</strong>
       </div>
     </article>
+    ${reviewContext}
     ${renderReplayer(hand, steps)}
     <section class="review-editor">
       <div class="review-editor-head">
@@ -3759,15 +4227,22 @@ function renderHandDetail() {
       <textarea data-review-notes rows="5" placeholder="What happened in this hand?">${escapeHtml(hand.notes ?? "")}</textarea>
       <div class="form-actions">
         <button class="button" type="button" data-save-review>Save Review</button>
+        ${reviewMode ? '<button class="button secondary" type="button" data-save-review-next>Save & Next</button>' : ""}
         <button class="button secondary" type="button" data-mark-reviewed>Mark Reviewed</button>
+        ${reviewMode ? '<button class="button secondary" type="button" data-mark-reviewed-next>Mark & Next</button>' : ""}
         <button class="button ghost" type="button" data-clear-reviewed>Reopen</button>
       </div>
     </section>
-    ${renderDecisionReview(hand)}
+    ${renderDecisionReview(hand, { reviewMode })}
     ${renderSimilarHands(hand)}
     <ul class="seat-list">${seats}</ul>
     <div class="street-list">${streets || '<div class="empty">No actions parsed for this hand.</div>'}</div>
   `;
+}
+
+function renderHandDetail() {
+  const hand = handById(state.selectedHandId);
+  elements.handDetail.innerHTML = hand ? handDetailHtml(hand) : emptyHandDetailHtml();
 }
 
 function renderImports() {
@@ -3848,6 +4323,7 @@ function render() {
   renderPlayerStats();
   renderCharts();
   renderBankrollCharts();
+  renderReviewFilterControls();
   renderReviewQueue();
   renderTagSummary();
   renderStudyPlan();
@@ -3857,6 +4333,7 @@ function render() {
   renderSessions();
   renderHands();
   renderHandDetail();
+  renderReviewWorkflow();
   renderImports();
   syncImportPolling();
 }
@@ -3953,8 +4430,11 @@ async function refresh({ quiet = false } = {}) {
 
 async function loadReviewQueue() {
   if (state.demoMode) {
+    state.reviewSpots = demoReviewSpots(state.hands);
+    renderReviewFilterControls();
     renderMetrics();
     renderReviewQueue();
+    renderReviewWorkflow();
     renderHomeInsights();
     renderSessions();
     return;
@@ -3963,8 +4443,10 @@ async function loadReviewQueue() {
   const payload = await api(reviewQueuePath());
   state.reviewSpots = payload.spots;
   renderMetrics();
+  renderReviewFilterControls();
   renderReviewQueue();
   renderHomeInsights();
+  renderReviewWorkflow();
   renderSessions();
 }
 
@@ -3972,6 +4454,7 @@ async function loadSimilarHands(handId) {
   if (state.demoMode) {
     setDemoDecisionContext(handId);
     renderHandDetail();
+    renderReviewWorkflow();
     return;
   }
 
@@ -3987,12 +4470,14 @@ async function loadSimilarHands(handId) {
   state.similarForHandId = handId;
   state.similarHands = payload.hands;
   renderHandDetail();
+  renderReviewWorkflow();
 }
 
 async function loadDecisionReview(handId) {
   if (state.demoMode) {
     setDemoDecisionContext(handId);
     renderHandDetail();
+    renderReviewWorkflow();
     return;
   }
 
@@ -4011,12 +4496,14 @@ async function loadDecisionReview(handId) {
     state.selectedDecisionId = payload.decisions[0]?.id ?? null;
   }
   renderHandDetail();
+  renderReviewWorkflow();
 }
 
 async function loadStudyPlan() {
   if (state.demoMode) {
     renderStudyPlan();
     renderHomeInsights();
+    renderReviewWorkflow();
     return;
   }
 
@@ -4024,6 +4511,7 @@ async function loadStudyPlan() {
   state.studyPlan = payload.items;
   renderStudyPlan();
   renderHomeInsights();
+  renderReviewWorkflow();
 }
 
 async function selectHand(handId) {
@@ -4035,15 +4523,36 @@ async function selectHand(handId) {
     setDemoDecisionContext(handId);
     renderHands();
     renderHandDetail();
+    renderReviewWorkflow();
     return;
   }
 
   renderHands();
   renderHandDetail();
+  renderReviewWorkflow();
   await Promise.all([
     loadSimilarHands(handId),
     loadDecisionReview(handId)
   ]);
+  renderReviewWorkflow();
+}
+
+async function openReviewView({ handId = "", startSession = false } = {}) {
+  setView("review");
+
+  if (startSession) {
+    handId = startReviewSession({ initialHandId: handId }) ?? handId;
+  }
+
+  const ids = activeReviewQueueIds();
+  const targetId = handId || (ids.includes(state.selectedHandId) ? state.selectedHandId : ids[0]);
+
+  if (targetId) {
+    await selectHand(targetId);
+    return;
+  }
+
+  renderReviewWorkflow();
 }
 
 function readSelectedFile(file) {
@@ -4098,6 +4607,137 @@ function bankrollPreviewSummary(payload) {
   return parts.join(" / ");
 }
 
+async function handleHandDetailClick(event, container, { reviewMode = false } = {}) {
+  const similarTarget = event.target.closest("[data-open-similar-hand]");
+  if (similarTarget) {
+    await selectHand(similarTarget.dataset.openSimilarHand);
+    return;
+  }
+
+  const decisionTarget = event.target.closest("[data-select-decision]");
+  if (decisionTarget) {
+    state.selectedDecisionId = decisionTarget.dataset.selectDecision;
+    renderHandDetail();
+    renderReviewWorkflow();
+    return;
+  }
+
+  const decisionReviewTarget = event.target.closest("[data-save-decision], [data-mark-decision-reviewed], [data-mark-decision-reviewed-next], [data-clear-decision-reviewed]");
+  if (decisionReviewTarget) {
+    const hand = handById(state.selectedHandId);
+    const decisionId = container.querySelector("[data-current-decision]")?.dataset.currentDecision;
+    if (!hand || !decisionId) {
+      return;
+    }
+
+    const checklist = {};
+    for (const input of container.querySelectorAll("[data-decision-checklist]")) {
+      checklist[input.dataset.decisionChecklist] = input.value;
+    }
+    const reviewed = decisionReviewTarget.matches("[data-mark-decision-reviewed], [data-mark-decision-reviewed-next]")
+      ? true
+      : decisionReviewTarget.matches("[data-clear-decision-reviewed]")
+        ? false
+        : undefined;
+    const advance = reviewMode && decisionReviewTarget.matches("[data-mark-decision-reviewed-next]");
+
+    try {
+      const payload = await saveDecisionReviewPatch(hand, decisionId, {
+        note: container.querySelector("[data-decision-note]")?.value ?? "",
+        checklist,
+        ...(reviewed === undefined ? {} : { reviewed })
+      });
+      state.hands = state.hands.map((item) => item.id === payload.hand.id ? payload.hand : item);
+      state.decisionReportForHandId = hand.id;
+      state.decisionReport = payload.report;
+      state.selectedDecisionId = decisionId;
+      await loadStudyPlan();
+      renderHandDetail();
+      renderReviewWorkflow();
+      if (advance) {
+        await advanceReviewAfter(hand.id);
+      }
+      showToast(reviewed === true ? "Decision marked reviewed." : "Decision review saved.");
+    } catch (error) {
+      showToast(error.message);
+    }
+    return;
+  }
+
+  const tagTarget = event.target.closest("[data-review-tag]");
+  if (tagTarget) {
+    tagTarget.classList.toggle("active");
+    return;
+  }
+
+  const reviewTarget = event.target.closest("[data-save-review], [data-save-review-next], [data-mark-reviewed], [data-mark-reviewed-next], [data-clear-reviewed]");
+  if (reviewTarget) {
+    const hand = handById(state.selectedHandId);
+    if (!hand) {
+      return;
+    }
+
+    const tags = [...container.querySelectorAll("[data-review-tag].active")]
+      .map((button) => button.dataset.reviewTag);
+    const notes = container.querySelector("[data-review-notes]")?.value ?? "";
+    const reviewed = reviewTarget.matches("[data-mark-reviewed], [data-mark-reviewed-next]")
+      ? true
+      : reviewTarget.matches("[data-clear-reviewed]")
+        ? false
+        : undefined;
+    const advance = reviewMode && reviewTarget.matches("[data-save-review-next], [data-mark-reviewed-next]");
+
+    try {
+      const payload = await saveHandReviewPatch(hand, {
+        tags,
+        notes,
+        ...(reviewed === undefined ? {} : { reviewed })
+      });
+      state.hands = state.hands.map((item) => item.id === payload.hand.id ? payload.hand : item);
+      state.selectedHandId = payload.hand.id;
+      if (state.demoMode) {
+        render();
+      } else {
+        await refresh({ quiet: true });
+        state.selectedHandId = payload.hand.id;
+        render();
+      }
+      if (advance) {
+        await advanceReviewAfter(payload.hand.id);
+      }
+      showToast(reviewed === true ? "Hand marked reviewed." : reviewed === false ? "Hand reopened." : "Review saved.");
+    } catch (error) {
+      showToast(error.message);
+    }
+    return;
+  }
+
+  const target = event.target.closest("[data-replay]");
+  if (!target) {
+    return;
+  }
+
+  const hand = handById(state.selectedHandId);
+  if (!hand) {
+    return;
+  }
+
+  const steps = replaySteps(hand);
+  const action = target.dataset.replay;
+  if (action === "start") {
+    state.replayStep = 0;
+  } else if (action === "prev") {
+    state.replayStep = Math.max(0, state.replayStep - 1);
+  } else if (action === "next") {
+    state.replayStep = Math.min(steps.length - 1, state.replayStep + 1);
+  } else if (action === "end") {
+    state.replayStep = steps.length - 1;
+  }
+
+  renderHandDetail();
+  renderReviewWorkflow();
+}
+
 document.addEventListener("click", (event) => {
   const startTarget = event.target.closest("[data-start-tracking]");
   if (startTarget) {
@@ -4123,8 +4763,10 @@ document.addEventListener("click", (event) => {
   const reviewHandTarget = event.target.closest("[data-open-review-hand]");
   if (reviewHandTarget) {
     event.preventDefault();
-    setView("hands");
-    selectHand(reviewHandTarget.dataset.openReviewHand).catch((error) => showToast(error.message));
+    openReviewView({
+      handId: reviewHandTarget.dataset.openReviewHand,
+      startSession: true
+    }).catch((error) => showToast(error.message));
     return;
   }
 
@@ -4146,12 +4788,24 @@ document.addEventListener("click", (event) => {
       return;
     }
 
+    if (viewTarget.dataset.jumpView === "review") {
+      openReviewView().catch((error) => showToast(error.message));
+      return;
+    }
+
     setView(viewTarget.dataset.jumpView);
   }
 });
 
 elements.navButtons.forEach((button) => {
-  button.addEventListener("click", () => setView(button.dataset.view));
+  button.addEventListener("click", () => {
+    if (button.dataset.view === "review") {
+      openReviewView().catch((error) => showToast(error.message));
+      return;
+    }
+
+    setView(button.dataset.view);
+  });
 });
 
 elements.homePeriodTabs.addEventListener("click", (event) => {
@@ -4416,11 +5070,78 @@ for (const filter of [
   filter.addEventListener("change", renderHands);
 }
 
-for (const filter of [elements.reviewStatusFilter, elements.reviewSort]) {
+for (const filter of [elements.reviewStatusFilter, elements.reviewWorkflowStatus]) {
   filter.addEventListener("change", () => {
+    state.reviewFilters.reviewed = filter.value;
+    endReviewSession();
     loadReviewQueue().catch((error) => showToast(error.message));
   });
 }
+
+for (const filter of [elements.reviewSort, elements.reviewWorkflowSort]) {
+  filter.addEventListener("change", () => {
+    state.reviewFilters.sort = filter.value;
+    endReviewSession();
+    loadReviewQueue().catch((error) => showToast(error.message));
+  });
+}
+
+elements.reviewBatchSize.addEventListener("change", () => {
+  state.reviewSession.batchSize = Number(elements.reviewBatchSize.value || 5);
+  if (state.reviewSession.active) {
+    const selected = state.selectedHandId;
+    const targetId = startReviewSession({
+      initialHandId: selected
+    });
+    if (targetId && targetId !== selected) {
+      selectHand(targetId).catch((error) => showToast(error.message));
+      return;
+    }
+  }
+  renderReviewWorkflow();
+});
+
+elements.reviewStartSession.addEventListener("click", () => {
+  const targetId = startReviewSession({
+    initialHandId: state.selectedHandId
+  });
+
+  if (!targetId) {
+    renderReviewWorkflow();
+    showToast("No hands in the current review queue.");
+    return;
+  }
+
+  openReviewView({
+    handId: targetId
+  }).catch((error) => showToast(error.message));
+});
+
+elements.reviewClearSession.addEventListener("click", () => {
+  endReviewSession();
+  renderReviewWorkflow();
+});
+
+elements.reviewFlowList.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-review-select]");
+  if (!target) {
+    return;
+  }
+
+  const ids = activeReviewQueueIds();
+  const index = ids.indexOf(target.dataset.reviewSelect);
+  state.reviewSession.cursor = index >= 0 ? index : state.reviewSession.cursor;
+  selectHand(target.dataset.reviewSelect).catch((error) => showToast(error.message));
+});
+
+elements.reviewHandNav.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-review-move]");
+  if (!target) {
+    return;
+  }
+
+  moveReviewSelection(Number(target.dataset.reviewMove)).catch((error) => showToast(error.message));
+});
 
 elements.handList.addEventListener("click", (event) => {
   const target = event.target.closest("[data-hand-id]");
@@ -4431,126 +5152,14 @@ elements.handList.addEventListener("click", (event) => {
   selectHand(target.dataset.handId).catch((error) => showToast(error.message));
 });
 
-elements.handDetail.addEventListener("click", async (event) => {
-  const similarTarget = event.target.closest("[data-open-similar-hand]");
-  if (similarTarget) {
-    await selectHand(similarTarget.dataset.openSimilarHand);
-    return;
-  }
+elements.handDetail.addEventListener("click", (event) => {
+  handleHandDetailClick(event, elements.handDetail).catch((error) => showToast(error.message));
+});
 
-  const decisionTarget = event.target.closest("[data-select-decision]");
-  if (decisionTarget) {
-    state.selectedDecisionId = decisionTarget.dataset.selectDecision;
-    renderHandDetail();
-    return;
-  }
-
-  const decisionReviewTarget = event.target.closest("[data-save-decision], [data-mark-decision-reviewed], [data-clear-decision-reviewed]");
-  if (decisionReviewTarget) {
-    const hand = state.hands.find((item) => item.id === state.selectedHandId);
-    const decisionId = elements.handDetail.querySelector("[data-current-decision]")?.dataset.currentDecision;
-    if (!hand || !decisionId) {
-      return;
-    }
-
-    const checklist = {};
-    for (const input of elements.handDetail.querySelectorAll("[data-decision-checklist]")) {
-      checklist[input.dataset.decisionChecklist] = input.value;
-    }
-    const reviewed = decisionReviewTarget.matches("[data-mark-decision-reviewed]")
-      ? true
-      : decisionReviewTarget.matches("[data-clear-decision-reviewed]")
-        ? false
-        : undefined;
-
-    try {
-      const payload = await api(`/api/hands/${encodeURIComponent(hand.id)}/decisions/${encodeURIComponent(decisionId)}`, {
-        method: "PATCH",
-        body: {
-          note: elements.handDetail.querySelector("[data-decision-note]")?.value ?? "",
-          checklist,
-          ...(reviewed === undefined ? {} : { reviewed })
-        }
-      });
-      state.hands = state.hands.map((item) => item.id === payload.hand.id ? payload.hand : item);
-      state.decisionReportForHandId = hand.id;
-      state.decisionReport = payload.report;
-      state.selectedDecisionId = decisionId;
-      await loadStudyPlan();
-      renderHandDetail();
-      showToast(reviewed === true ? "Decision marked reviewed." : "Decision review saved.");
-    } catch (error) {
-      showToast(error.message);
-    }
-    return;
-  }
-
-  const tagTarget = event.target.closest("[data-review-tag]");
-  if (tagTarget) {
-    tagTarget.classList.toggle("active");
-    return;
-  }
-
-  const reviewTarget = event.target.closest("[data-save-review], [data-mark-reviewed], [data-clear-reviewed]");
-  if (reviewTarget) {
-    const hand = state.hands.find((item) => item.id === state.selectedHandId);
-    if (!hand) {
-      return;
-    }
-
-    const tags = [...elements.handDetail.querySelectorAll("[data-review-tag].active")]
-      .map((button) => button.dataset.reviewTag);
-    const notes = elements.handDetail.querySelector("[data-review-notes]")?.value ?? "";
-    const reviewed = reviewTarget.matches("[data-mark-reviewed]")
-      ? true
-      : reviewTarget.matches("[data-clear-reviewed]")
-        ? false
-        : undefined;
-
-    try {
-      const payload = await api(`/api/hands/${encodeURIComponent(hand.id)}`, {
-        method: "PATCH",
-        body: {
-          tags,
-          notes,
-          ...(reviewed === undefined ? {} : { reviewed })
-        }
-      });
-      state.hands = state.hands.map((item) => item.id === payload.hand.id ? payload.hand : item);
-      state.selectedHandId = payload.hand.id;
-      await refresh({ quiet: true });
-      state.selectedHandId = payload.hand.id;
-      render();
-      showToast(reviewed === true ? "Hand marked reviewed." : "Review saved.");
-    } catch (error) {
-      showToast(error.message);
-    }
-    return;
-  }
-
-  const target = event.target.closest("[data-replay]");
-  if (!target) {
-    return;
-  }
-
-  const hand = state.hands.find((item) => item.id === state.selectedHandId);
-  if (!hand) {
-    return;
-  }
-
-  const steps = replaySteps(hand);
-  const action = target.dataset.replay;
-  if (action === "start") {
-    state.replayStep = 0;
-  } else if (action === "prev") {
-    state.replayStep = Math.max(0, state.replayStep - 1);
-  } else if (action === "next") {
-    state.replayStep = Math.min(steps.length - 1, state.replayStep + 1);
-  } else if (action === "end") {
-    state.replayStep = steps.length - 1;
-  }
-
-  renderHandDetail();
+elements.reviewHandDetail.addEventListener("click", (event) => {
+  handleHandDetailClick(event, elements.reviewHandDetail, {
+    reviewMode: true
+  }).catch((error) => showToast(error.message));
 });
 
 elements.leakList.addEventListener("click", (event) => {
@@ -4558,15 +5167,21 @@ elements.leakList.addEventListener("click", (event) => {
   if (markTarget) {
     const id = markTarget.dataset.queueMarkReviewed ?? markTarget.dataset.queueReopen;
     const reviewed = Boolean(markTarget.dataset.queueMarkReviewed);
+    const hand = handById(id);
 
-    api(`/api/hands/${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: {
-        reviewed
-      }
+    if (!hand) {
+      return;
+    }
+
+    saveHandReviewPatch(hand, {
+      reviewed
     })
       .then(async () => {
-        await refresh({ quiet: true });
+        if (state.demoMode) {
+          render();
+        } else {
+          await refresh({ quiet: true });
+        }
         showToast(reviewed ? "Hand marked reviewed." : "Hand reopened.");
       })
       .catch((error) => showToast(error.message));
@@ -4575,8 +5190,10 @@ elements.leakList.addEventListener("click", (event) => {
 
   const target = event.target.closest("[data-review-spot-hand]");
   if (target) {
-    setView("hands");
-    selectHand(target.dataset.reviewSpotHand).catch((error) => showToast(error.message));
+    openReviewView({
+      handId: target.dataset.reviewSpotHand,
+      startSession: true
+    }).catch((error) => showToast(error.message));
   }
 });
 
@@ -4597,8 +5214,10 @@ elements.studyPlan.addEventListener("click", (event) => {
     return;
   }
 
-  setView("hands");
-  selectHand(target.dataset.studyPlanHand).catch((error) => showToast(error.message));
+  openReviewView({
+    handId: target.dataset.studyPlanHand,
+    startSession: true
+  }).catch((error) => showToast(error.message));
 });
 
 elements.importList.addEventListener("click", async (event) => {
