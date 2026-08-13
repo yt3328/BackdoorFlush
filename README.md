@@ -4,7 +4,7 @@ Backdoor Flush is a small hand-history desk for reviewing poker sessions.
 
 The local app lets you upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, track bankroll sessions, and run quick equity checks.
 
-Version 1.2 adds import previews and a bankroll transaction ledger for deposits, withdrawals, transfers, and initial bankroll rows.
+Version 1.6 clarifies the difference between bankroll/session performance and the smaller captured-hand study sample, so VPIP/PFR and position views are labeled as review signals rather than full-volume stats.
 
 ## Run it
 
@@ -29,7 +29,7 @@ Local mode:
 - Skips duplicate uploads and overlapping hands.
 - Stores parsed hands in a local JSON store.
 - Deletes individual imports or clears the local session.
-- Shows VPIP, PFR, 3-bet rate, aggression factor, position splits, and compact charts.
+- Shows VPIP, PFR, 3-bet rate, aggression factor, captured hero-position coverage, and compact charts.
 - Tracks poker sessions with location, stakes, hours, buy-ins, cash-outs, results, hourly rate, and bb/hr.
 - Imports previous cash-game and tournament session exports into the bankroll tracker.
 - Previews bankroll exports before import, including new sessions, ledger transactions, duplicates, and skipped rows.

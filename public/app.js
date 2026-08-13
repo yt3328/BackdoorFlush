@@ -185,6 +185,7 @@ const elements = {
   studyPlan: document.querySelector("#study-plan"),
   positionChart: document.querySelector("#position-chart"),
   importChart: document.querySelector("#import-chart"),
+  studySampleContext: document.querySelector("#study-sample-context"),
   bankrollChart: document.querySelector("#bankroll-chart"),
   locationChart: document.querySelector("#location-chart"),
   bankrollFilterControls: [...document.querySelectorAll("[data-bankroll-filter]")],
@@ -241,7 +242,7 @@ const elements = {
     sideHands: document.querySelector("#side-hands"),
     hands: document.querySelector("#metric-hands"),
     players: document.querySelector("#metric-players"),
-    vpip: document.querySelector("#metric-vpip"),
+    linkedHands: document.querySelector("#metric-linked-hands"),
     leaks: document.querySelector("#metric-leaks"),
     profit: document.querySelector("#metric-profit"),
     sessions: document.querySelector("#metric-sessions"),
@@ -962,16 +963,24 @@ function renderSparkline(points) {
 function renderMetrics() {
   const handCount = state.hands.length;
   const bankrollSummary = currentBankrollSummary();
-  const avgVpip =
-    state.players.length === 0
-      ? 0
-      : state.players.reduce((sum, player) => sum + player.vpipPct, 0) / state.players.length;
+  const linkedHands = state.hands.filter((hand) => hand.sessionId).length;
+  const liveHands = state.hands.filter((hand) => hand.source === "live-entry").length;
+  const importedHands = Math.max(0, handCount - liveHands);
 
   elements.metrics.sideHands.textContent = handCount;
   elements.metrics.hands.textContent = handCount;
   elements.metrics.players.textContent = state.players.length;
-  elements.metrics.vpip.textContent = `${avgVpip.toFixed(1)}%`;
+  elements.metrics.linkedHands.textContent = linkedHands;
   elements.metrics.leaks.textContent = state.reviewSpots.length;
+  elements.studySampleContext.innerHTML = handCount === 0
+    ? `
+      <strong>Study sample</strong>
+      <span>Captured-hand stats will appear after hands are imported or built from live sessions.</span>
+    `
+    : `
+      <strong>Study sample</strong>
+      <span>${handCount} saved hands: ${liveHands} live-built, ${importedHands} imported, ${linkedHands} linked to bankroll sessions. Hand stats below are review-sample signals, not a complete record of every hand played.</span>
+    `;
   elements.metrics.profit.textContent = formatCurrency(bankrollSummary.totalProfit, {
     compact: true,
     signed: true
@@ -1640,23 +1649,22 @@ function renderPlayerStats() {
 
 function positionRows() {
   const totals = new Map();
+  const handCount = state.hands.length;
 
-  for (const player of selectedPlayers()) {
-    for (const [position, values] of Object.entries(player.byPosition)) {
-      const current = totals.get(position) ?? { hands: 0, vpip: 0, pfr: 0 };
-      current.hands += values.hands;
-      current.vpip += values.vpip;
-      current.pfr += values.pfr;
-      totals.set(position, current);
-    }
+  for (const hand of state.hands) {
+    const position = heroPosition(hand) || "Unknown";
+    const current = totals.get(position) ?? { hands: 0, result: 0 };
+    current.hands += 1;
+    current.result += estimatedHeroResult(hand);
+    totals.set(position, current);
   }
 
   return [...totals.entries()]
     .map(([position, values]) => ({
       position,
       hands: values.hands,
-      vpipPct: values.hands === 0 ? 0 : Number(((values.vpip / values.hands) * 100).toFixed(1)),
-      pfrPct: values.hands === 0 ? 0 : Number(((values.pfr / values.hands) * 100).toFixed(1))
+      sharePct: handCount === 0 ? 0 : Number(((values.hands / handCount) * 100).toFixed(1)),
+      result: values.result
     }))
     .sort((a, b) => {
       const aIndex = positionOrder.includes(a.position) ? positionOrder.indexOf(a.position) : positionOrder.length;
@@ -1669,7 +1677,7 @@ function renderCharts() {
   const positions = positionRows();
 
   if (positions.length === 0) {
-    elements.positionChart.innerHTML = '<div class="empty">Load hands to see position patterns.</div>';
+    elements.positionChart.innerHTML = '<div class="empty">Capture hands to see hero-position coverage.</div>';
   } else {
     elements.positionChart.innerHTML = positions
       .map(
@@ -1677,13 +1685,12 @@ function renderCharts() {
           <div class="chart-row-item">
             <div class="chart-label">
               <strong>${escapeHtml(row.position)}</strong>
-              <span>${row.hands} hands</span>
+              <span>${row.hands} captured hands</span>
             </div>
-            <div class="bar-pair">
-              <span class="bar vpip" style="width: ${row.vpipPct}%"></span>
-              <span class="bar pfr" style="width: ${row.pfrPct}%"></span>
+            <div class="single-bar coverage">
+              <span style="width: ${Math.max(4, row.sharePct)}%"></span>
             </div>
-            <div class="chart-values">VPIP ${row.vpipPct}% / PFR ${row.pfrPct}%</div>
+            <div class="chart-values">${row.sharePct}% / ${formatCurrency(row.result, { signed: true })}</div>
           </div>
         `
       )

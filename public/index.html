@@ -68,22 +68,23 @@
         <section class="view active" id="view-overview">
           <div class="metrics">
             <article class="metric">
-              <span class="metric-label">Hands</span>
+              <span class="metric-label">Captured Hands</span>
               <strong id="metric-hands">0</strong>
             </article>
             <article class="metric">
-              <span class="metric-label">Players</span>
+              <span class="metric-label">Sample Players</span>
               <strong id="metric-players">0</strong>
             </article>
             <article class="metric">
-              <span class="metric-label">Avg VPIP</span>
-              <strong id="metric-vpip">0%</strong>
+              <span class="metric-label">Linked Hands</span>
+              <strong id="metric-linked-hands">0</strong>
             </article>
             <article class="metric">
-              <span class="metric-label">Review</span>
+              <span class="metric-label">Open Reviews</span>
               <strong id="metric-leaks">0</strong>
             </article>
           </div>
+          <section id="study-sample-context" class="sample-context" aria-label="Hand sample context"></section>
 
           <section class="panel bankroll-filter-panel" aria-labelledby="bankroll-filter-title">
             <div class="panel-head filter-head">
@@ -159,7 +160,10 @@
           <div class="split chart-row">
             <section class="panel">
               <div class="panel-head">
-                <h3>Position Mix</h3>
+                <div>
+                  <h3>Captured Hero Positions</h3>
+                  <p class="panel-note">Saved hands only; use this as review coverage, not full session volume.</p>
+                </div>
               </div>
               <div id="position-chart" class="chart-list"></div>
             </section>
@@ -175,7 +179,10 @@
           <div class="split">
             <section class="panel">
               <div class="panel-head">
-                <h3>Players</h3>
+                <div>
+                  <h3>Sample Player Tendencies</h3>
+                  <p class="panel-note">VPIP/PFR are calculated from the hands captured in this workspace.</p>
+                </div>
                 <select id="player-filter" aria-label="Player filter">
                   <option value="">All players</option>
                 </select>

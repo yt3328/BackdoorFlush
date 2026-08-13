@@ -327,6 +327,29 @@ button {
   margin-bottom: 16px;
 }
 
+.sample-context {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -4px 0 16px;
+  border: 1px solid #d7e5dc;
+  border-radius: 8px;
+  background: #eef7f1;
+  color: var(--felt-dark);
+  padding: 12px 16px;
+  line-height: 1.45;
+}
+
+.sample-context strong {
+  flex: 0 0 auto;
+  font-size: 0.86rem;
+}
+
+.sample-context span {
+  color: #365b4a;
+  font-size: 0.88rem;
+}
+
 .filter-head {
   min-height: 54px;
 }
@@ -427,6 +450,13 @@ button {
 
 .panel h3 {
   font-size: 1rem;
+}
+
+.panel-note {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  margin: 5px 0 0;
 }
 
 select,
@@ -1359,6 +1389,10 @@ button.tag-chip.active,
   background: var(--felt);
 }
 
+.single-bar.coverage span {
+  background: linear-gradient(90deg, var(--felt), #5b8f73);
+}
+
 .bankroll-chart {
   padding: 14px 16px 16px;
 }
@@ -1974,6 +2008,11 @@ button.tag-chip.active,
   }
 
   .auth-notice {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .sample-context {
     align-items: flex-start;
     flex-direction: column;
   }
