@@ -422,6 +422,25 @@ export function createHttpServer({ store }) {
         return;
       }
 
+      if (requestUrl.pathname === "/api/restore/workspace/preview") {
+        if (!methodAllowed(request, response, "POST")) {
+          return;
+        }
+
+        sendJson(response, 200, store.previewWorkspaceRestore(await readJsonBody(request)));
+        return;
+      }
+
+      if (requestUrl.pathname === "/api/restore/workspace") {
+        if (!methodAllowed(request, response, "POST")) {
+          return;
+        }
+
+        const result = store.restoreWorkspace(await readJsonBody(request));
+        sendJson(response, result.totalReady > 0 ? 201 : 200, result);
+        return;
+      }
+
       if (requestUrl.pathname === "/api/session") {
         if (!methodAllowed(request, response, "DELETE")) {
           return;

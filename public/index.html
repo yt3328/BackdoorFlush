@@ -612,6 +612,29 @@
 
               <section class="panel">
                 <div class="panel-head">
+                  <h3>Restore Backup</h3>
+                </div>
+                <form id="workspace-restore-form" class="form">
+                  <label>
+                    Backup JSON
+                    <input id="workspace-restore-file" name="workspaceRestoreFile" type="file" accept=".json,.txt,application/json,text/plain">
+                  </label>
+                  <label>
+                    Backup text
+                    <textarea name="rawText" rows="8"></textarea>
+                  </label>
+                  <div class="form-actions">
+                    <button id="preview-workspace-restore" class="button secondary" type="button">Preview</button>
+                    <button class="button" type="submit">Merge Backup</button>
+                    <button id="clear-workspace-restore" class="button secondary" type="button">Clear Text</button>
+                  </div>
+                  <div id="workspace-restore-preview" class="import-preview"></div>
+                  <div id="workspace-restore-status" class="import-status muted-line"></div>
+                </form>
+              </section>
+
+              <section class="panel">
+                <div class="panel-head">
                   <h3 id="bankroll-transaction-form-title">Bankroll Transactions</h3>
                 </div>
                 <form id="bankroll-transaction-form" class="form transaction-form">

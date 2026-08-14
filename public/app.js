@@ -1,6 +1,6 @@
 import { createAuthClient } from "./auth.js";
 
-const appVersion = "2.2.0";
+const appVersion = "2.3.0";
 const positionOrder = ["BTN", "CO", "HJ", "LJ", "MP", "UTG+1", "UTG", "STR", "SB", "BB", "Unknown"];
 const streetOrder = ["hole-cards", "flop", "turn", "river", "show-down"];
 const streetLabels = {
@@ -159,6 +159,7 @@ const state = {
   bankrollTransactions: [],
   bankrollTransactionSummary: emptyTransactionSummary,
   bankrollImportPreview: null,
+  workspaceRestorePreview: null,
   bankrollFilters: { ...emptyBankrollFilters },
   sessionDetailFilters: { ...emptySessionDetailFilters },
   homePeriod: "30d",
@@ -270,6 +271,12 @@ const elements = {
   bankrollImportPreview: document.querySelector("#bankroll-import-preview"),
   bankrollImportStatus: document.querySelector("#bankroll-import-status"),
   clearBankrollImport: document.querySelector("#clear-bankroll-import"),
+  workspaceRestoreForm: document.querySelector("#workspace-restore-form"),
+  workspaceRestoreFile: document.querySelector("#workspace-restore-file"),
+  previewWorkspaceRestore: document.querySelector("#preview-workspace-restore"),
+  workspaceRestorePreview: document.querySelector("#workspace-restore-preview"),
+  workspaceRestoreStatus: document.querySelector("#workspace-restore-status"),
+  clearWorkspaceRestore: document.querySelector("#clear-workspace-restore"),
   transactionForm: document.querySelector("#bankroll-transaction-form"),
   transactionFormTitle: document.querySelector("#bankroll-transaction-form-title"),
   transactionSubmit: document.querySelector("#bankroll-transaction-submit"),
@@ -439,6 +446,7 @@ function clearDashboardData() {
   state.bankrollTransactions = [];
   state.bankrollTransactionSummary = emptyTransactionSummary;
   state.bankrollImportPreview = null;
+  state.workspaceRestorePreview = null;
   state.bankrollFilters = { ...emptyBankrollFilters };
   state.sessionDetailFilters = { ...emptySessionDetailFilters };
   state.players = [];
@@ -4260,6 +4268,96 @@ function renderBankrollImportPreview(payload = state.bankrollImportPreview) {
   `;
 }
 
+function restoreCount(payload, bucket, field) {
+  return payload?.[bucket]?.[field] ?? 0;
+}
+
+function restoreSourceLabel(source = {}) {
+  const exportedAt = source.exportedAt ? formatDate(String(source.exportedAt).slice(0, 10)) : "unknown date";
+  return `${source.app ?? "Backup"} ${source.schemaVersion ?? ""}`.trim() + ` / ${exportedAt}`;
+}
+
+function renderWorkspaceRestorePreview(payload = state.workspaceRestorePreview) {
+  if (!payload) {
+    elements.workspaceRestorePreview.innerHTML = "";
+    return;
+  }
+
+  const sessions = payload.bankrollSessions ?? [];
+  const transactions = payload.bankrollTransactions ?? [];
+  const imports = payload.imports ?? [];
+  const hands = payload.hands ?? [];
+  const readyCounts = payload.readyCounts ?? {};
+  const duplicateCounts = payload.duplicateCounts ?? {};
+  const warnings = payload.warnings ?? [];
+
+  elements.workspaceRestorePreview.innerHTML = `
+    <div class="import-preview-grid restore-preview-grid">
+      <div>
+        <span class="subtle">Sessions ready</span>
+        <strong>${readyCounts.bankrollSessions ?? 0}</strong>
+      </div>
+      <div>
+        <span class="subtle">Transactions ready</span>
+        <strong>${readyCounts.bankrollTransactions ?? 0}</strong>
+      </div>
+      <div>
+        <span class="subtle">Hands ready</span>
+        <strong>${readyCounts.hands ?? 0}</strong>
+      </div>
+      <div>
+        <span class="subtle">Duplicates</span>
+        <strong>${payload.totalDuplicate ?? 0}</strong>
+      </div>
+    </div>
+    <div class="preview-lists">
+      <div>
+        <h4>${escapeHtml(restoreSourceLabel(payload.source))}</h4>
+        <p>${countLabel(payload.totalReady ?? 0, "record")} ready / ${countLabel(payload.totalDuplicate ?? 0, "duplicate")} skipped</p>
+      </div>
+      <div>
+        <h4>Sessions</h4>
+        ${
+          sessions.length
+            ? sessions.slice(0, 4).map((session) => `
+                <p>${escapeHtml(formatDate(session.date))} / ${escapeHtml(session.location)} / ${formatCurrency(session.profit, { signed: true })}</p>
+              `).join("")
+            : '<p class="muted-line">No new sessions found.</p>'
+        }
+      </div>
+      <div>
+        <h4>Hands & Imports</h4>
+        <p>${countLabel(readyCounts.hands ?? 0, "hand")} ready / ${countLabel(readyCounts.imports ?? 0, "import")} ready</p>
+        ${
+          hands.length
+            ? hands.slice(0, 3).map((hand) => `<p>${escapeHtml(hand.handNumber ?? hand.id)} / ${escapeHtml(hand.tableName ?? "Unknown table")}</p>`).join("")
+            : '<p class="muted-line">No new hands found.</p>'
+        }
+      </div>
+      <div>
+        <h4>Transactions</h4>
+        ${
+          transactions.length
+            ? transactions.slice(0, 4).map((transaction) => `
+                <p>${escapeHtml(formatDate(transaction.date))} / ${escapeHtml(transactionTypeLabel(transaction.type))} / ${formatCurrency(transaction.amount, { signed: true })}</p>
+              `).join("")
+            : '<p class="muted-line">No new transactions found.</p>'
+        }
+      </div>
+      ${
+        imports.length || warnings.length
+          ? `<div>
+              <h4>Notes</h4>
+              ${imports.slice(0, 3).map((item) => `<p>${escapeHtml(item.name ?? item.id)} / ${escapeHtml(item.source ?? "backup")}</p>`).join("")}
+              ${warnings.map((warning) => `<p>${escapeHtml(warning)}</p>`).join("")}
+            </div>`
+          : ""
+      }
+    </div>
+    <p class="muted-line">Incoming duplicates: ${restoreCount(payload, "duplicateCounts", "bankrollSessions")} sessions / ${restoreCount(payload, "duplicateCounts", "bankrollTransactions")} transactions / ${restoreCount(payload, "duplicateCounts", "hands")} hands / ${restoreCount(payload, "duplicateCounts", "imports")} imports.</p>
+  `;
+}
+
 function renderTransactions() {
   const summary = state.bankrollTransactionSummary;
 
@@ -5319,6 +5417,7 @@ function render() {
   renderStudyPlan();
   renderHomeInsights();
   renderBankrollImportPreview();
+  renderWorkspaceRestorePreview();
   renderTransactions();
   renderSessions();
   renderHands();
@@ -5613,6 +5712,27 @@ function bankrollPreviewSummary(payload) {
 
   if ((payload.skippedCount ?? 0) > 0) {
     parts.push(countLabel(payload.skippedCount, "row") + " skipped");
+  }
+
+  return parts.join(" / ");
+}
+
+function workspaceRestoreSummary(payload, verb = "ready") {
+  const counts = verb === "restored"
+    ? payload.restoredCounts ?? payload.readyCounts ?? {}
+    : payload.readyCounts ?? {};
+  const parts = [
+    countLabel(counts.bankrollSessions ?? 0, "session") + ` ${verb}`,
+    countLabel(counts.bankrollTransactions ?? 0, "transaction") + ` ${verb}`,
+    countLabel(counts.hands ?? 0, "hand") + ` ${verb}`
+  ];
+
+  if ((counts.imports ?? 0) > 0) {
+    parts.push(countLabel(counts.imports, "import") + ` ${verb}`);
+  }
+
+  if ((payload.totalDuplicate ?? 0) > 0) {
+    parts.push(countLabel(payload.totalDuplicate, "duplicate") + " skipped");
   }
 
   return parts.join(" / ");
@@ -6363,6 +6483,75 @@ elements.bankrollImportForm.addEventListener("submit", async (event) => {
     showToast(markWorkspaceSaved(bankrollImportSummary(payload).replace(/\.$/, "")));
   } catch (error) {
     elements.bankrollImportStatus.textContent = error.message;
+    showToast(error.message);
+  }
+});
+
+elements.workspaceRestoreFile.addEventListener("change", async (event) => {
+  const [file] = event.target.files;
+  if (!file) {
+    return;
+  }
+
+  try {
+    const rawText = await readSelectedFile(file);
+    elements.workspaceRestoreForm.elements.rawText.value = rawText;
+    state.workspaceRestorePreview = null;
+    renderWorkspaceRestorePreview();
+    elements.workspaceRestoreStatus.textContent = `${file.name} loaded.`;
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
+elements.clearWorkspaceRestore.addEventListener("click", () => {
+  elements.workspaceRestoreForm.elements.rawText.value = "";
+  elements.workspaceRestoreFile.value = "";
+  elements.workspaceRestoreStatus.textContent = "";
+  state.workspaceRestorePreview = null;
+  renderWorkspaceRestorePreview();
+});
+
+elements.previewWorkspaceRestore.addEventListener("click", async () => {
+  const rawText = elements.workspaceRestoreForm.elements.rawText.value;
+
+  try {
+    elements.workspaceRestoreStatus.textContent = "Building preview...";
+    const payload = await api("/api/restore/workspace/preview", {
+      method: "POST",
+      body: {
+        rawText
+      }
+    });
+    state.workspaceRestorePreview = payload;
+    renderWorkspaceRestorePreview(payload);
+    elements.workspaceRestoreStatus.textContent = workspaceRestoreSummary(payload);
+  } catch (error) {
+    elements.workspaceRestoreStatus.textContent = error.message;
+    showToast(error.message);
+  }
+});
+
+elements.workspaceRestoreForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+
+  try {
+    elements.workspaceRestoreStatus.textContent = "Merging backup...";
+    const payload = await api("/api/restore/workspace", {
+      method: "POST",
+      body: {
+        rawText: form.get("rawText")
+      }
+    });
+    state.workspaceRestorePreview = payload;
+    await refresh();
+    state.workspaceRestorePreview = payload;
+    renderWorkspaceRestorePreview(payload);
+    elements.workspaceRestoreStatus.textContent = workspaceRestoreSummary(payload, "restored");
+    showToast(markWorkspaceSaved(workspaceRestoreSummary(payload, "restored")));
+  } catch (error) {
+    elements.workspaceRestoreStatus.textContent = error.message;
     showToast(error.message);
   }
 });

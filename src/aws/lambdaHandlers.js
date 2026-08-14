@@ -362,6 +362,15 @@ export async function api(event) {
       }));
     }
 
+    if (pathname === "/api/restore/workspace/preview" && method === "POST") {
+      return jsonResponse(200, await store.previewWorkspaceRestore(eventBody(event)));
+    }
+
+    if (pathname === "/api/restore/workspace" && method === "POST") {
+      const result = await store.restoreWorkspace(eventBody(event));
+      return jsonResponse(result.totalReady > 0 ? 201 : 200, result);
+    }
+
     if (pathname === "/api/session" && method === "DELETE") {
       return jsonResponse(200, await store.clear());
     }

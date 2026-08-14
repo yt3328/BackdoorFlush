@@ -11,6 +11,7 @@ import { buildSessionDetail } from "../core/sessionInsights.js";
 import { buildBankrollSession, summarizeBankrollSessions } from "../core/sessionTracker.js";
 import { buildTagPerformance, filterHandLibrary, findSimilarHands } from "../core/studyTools.js";
 import { buildWorkspaceExport } from "../core/workspaceExport.js";
+import { buildWorkspaceRestorePlan, publicWorkspaceRestorePlan, workspaceRestoreResult } from "../core/workspaceRestore.js";
 
 function emptyState() {
   return {
@@ -549,6 +550,46 @@ export class HandStore {
       bankrollSessions: this.listBankrollSessions(),
       bankrollTransactions: this.listBankrollTransactions()
     });
+  }
+
+  workspaceRestorePlan(payload = {}) {
+    return buildWorkspaceRestorePlan(payload, {
+      imports: this.state.imports,
+      hands: this.state.hands,
+      bankrollSessions: this.state.bankrollSessions,
+      bankrollTransactions: this.state.bankrollTransactions
+    });
+  }
+
+  previewWorkspaceRestore(payload = {}) {
+    return publicWorkspaceRestorePlan(this.workspaceRestorePlan(payload));
+  }
+
+  restoreWorkspace(payload = {}) {
+    const plan = this.workspaceRestorePlan(payload);
+    const restoredAt = new Date().toISOString();
+
+    if (plan.totalReady > 0) {
+      this.state.bankrollSessions = [
+        ...plan.records.bankrollSessions,
+        ...this.state.bankrollSessions
+      ];
+      this.state.bankrollTransactions = [
+        ...plan.records.bankrollTransactions,
+        ...this.state.bankrollTransactions
+      ];
+      this.state.imports = [
+        ...plan.records.imports,
+        ...this.state.imports
+      ];
+      this.state.hands = [
+        ...plan.records.hands,
+        ...this.state.hands
+      ];
+      this.save();
+    }
+
+    return workspaceRestoreResult(plan, { restoredAt });
   }
 
   deleteImport(id) {

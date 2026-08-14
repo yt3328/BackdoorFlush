@@ -423,6 +423,93 @@ test("workspace export endpoint includes bankroll, ledger, imports, and hands", 
   assert.equal(exportPayload.hands[0].sessionId, sessionPayload.session.id);
 });
 
+test("workspace restore previews and merges backup JSON without duplicating records", async () => {
+  const sessionResponse = await dispatch({
+    method: "POST",
+    url: "/api/bankroll/sessions",
+    body: {
+      date: "2026-08-11",
+      location: "Aria",
+      gameType: "cash",
+      stakes: "$5/$10",
+      hours: 4,
+      profit: 1200,
+      notes: "Backup candidate."
+    }
+  });
+  const sessionPayload = await sessionResponse.json();
+  await dispatch({
+    method: "POST",
+    url: "/api/bankroll/transactions",
+    body: {
+      date: "2026-08-11",
+      type: "deposit",
+      amount: 1000,
+      bankrollName: "Main",
+      note: "Reload."
+    }
+  });
+  await createTaggedLiveHand({
+    sessionId: sessionPayload.session.id,
+    handNumber: "restore-target",
+    tags: ["thin-value"],
+    reviewed: true,
+    winner: "Tao",
+    wonAmount: 350,
+    riverAmount: 100
+  });
+
+  const exportResponse = await dispatch({ url: "/api/export/workspace" });
+  const exportPayload = await exportResponse.json();
+  const rawText = JSON.stringify(exportPayload);
+  application = createApplication({ persistencePath: null });
+
+  const previewResponse = await dispatch({
+    method: "POST",
+    url: "/api/restore/workspace/preview",
+    body: { rawText }
+  });
+  const previewPayload = await previewResponse.json();
+
+  assert.equal(previewResponse.status, 200);
+  assert.equal(previewPayload.readyCounts.bankrollSessions, 1);
+  assert.equal(previewPayload.readyCounts.bankrollTransactions, 1);
+  assert.equal(previewPayload.readyCounts.imports, 1);
+  assert.equal(previewPayload.readyCounts.hands, 1);
+  assert.equal(previewPayload.totalDuplicate, 0);
+
+  const restoreResponse = await dispatch({
+    method: "POST",
+    url: "/api/restore/workspace",
+    body: { rawText }
+  });
+  const restorePayload = await restoreResponse.json();
+  const sessionsResponse = await dispatch({ url: "/api/bankroll/sessions" });
+  const sessionsPayload = await sessionsResponse.json();
+  const transactionsResponse = await dispatch({ url: "/api/bankroll/transactions" });
+  const transactionsPayload = await transactionsResponse.json();
+  const handsResponse = await dispatch({ url: "/api/hands" });
+  const handsPayload = await handsResponse.json();
+
+  assert.equal(restoreResponse.status, 201);
+  assert.equal(restorePayload.restoredCounts.bankrollSessions, 1);
+  assert.equal(sessionsPayload.sessions.length, 1);
+  assert.equal(transactionsPayload.transactions.length, 1);
+  assert.equal(handsPayload.hands.length, 1);
+  assert.equal(handsPayload.hands[0].sessionId, sessionsPayload.sessions[0].id);
+
+  const duplicateResponse = await dispatch({
+    method: "POST",
+    url: "/api/restore/workspace",
+    body: { rawText }
+  });
+  const duplicatePayload = await duplicateResponse.json();
+
+  assert.equal(duplicateResponse.status, 200);
+  assert.equal(duplicatePayload.totalReady, 0);
+  assert.equal(duplicatePayload.totalDuplicate, 4);
+});
+
 test("imports can be linked to, moved between, and unlinked from bankroll sessions", async () => {
   const firstSessionResponse = await dispatch({
     method: "POST",

@@ -9,6 +9,7 @@ import { buildSessionDetail } from "../core/sessionInsights.js";
 import { buildBankrollSession, summarizeBankrollSessions } from "../core/sessionTracker.js";
 import { buildTagPerformance, filterHandLibrary, findSimilarHands } from "../core/studyTools.js";
 import { buildWorkspaceExport } from "../core/workspaceExport.js";
+import { buildWorkspaceRestorePlan, publicWorkspaceRestorePlan, workspaceRestoreResult } from "../core/workspaceRestore.js";
 
 function requiredEnv(name) {
   const value = process.env[name];
@@ -77,6 +78,46 @@ function publicBankrollTransaction(item) {
     ...rest,
     id: item.transactionId ?? sessionId,
     transactionId: item.transactionId ?? sessionId
+  };
+}
+
+function storedRestoreImport(record, userId) {
+  const { id, rawKey, ...rest } = record;
+  return {
+    ...rest,
+    userId,
+    importId: record.importId ?? record.id
+  };
+}
+
+function storedRestoreHand(record, userId) {
+  const { id, ...rest } = record;
+  return {
+    ...rest,
+    userId,
+    handId: record.handId ?? record.id
+  };
+}
+
+function storedRestoreSession(record, userId) {
+  const { id, ...rest } = record;
+  return {
+    ...rest,
+    userId,
+    entityType: "bankroll-session",
+    sessionId: record.sessionId ?? record.id
+  };
+}
+
+function storedRestoreTransaction(record, userId) {
+  const { id, ...rest } = record;
+  const transactionId = record.transactionId ?? record.id;
+  return {
+    ...rest,
+    userId,
+    entityType: "bankroll-transaction",
+    sessionId: transactionId,
+    transactionId
   };
 }
 
@@ -1036,6 +1077,80 @@ export class CloudHandStore {
       bankrollSessions,
       bankrollTransactions
     });
+  }
+
+  async workspaceRestorePlan(payload = {}) {
+    const [
+      imports,
+      hands,
+      bankrollSessions,
+      bankrollTransactions
+    ] = await Promise.all([
+      this.listAllImports(),
+      this.listAllHands(),
+      this.listBankrollSessions(),
+      this.listBankrollTransactions()
+    ]);
+
+    return buildWorkspaceRestorePlan(payload, {
+      imports,
+      hands,
+      bankrollSessions,
+      bankrollTransactions
+    });
+  }
+
+  async previewWorkspaceRestore(payload = {}) {
+    return publicWorkspaceRestorePlan(await this.workspaceRestorePlan(payload));
+  }
+
+  async restoreWorkspace(payload = {}) {
+    const { dynamo, sdk } = this.clients;
+    const plan = await this.workspaceRestorePlan(payload);
+    const restoredAt = new Date().toISOString();
+
+    const importRequests = plan.records.imports.map((record) => ({
+      PutRequest: {
+        Item: storedRestoreImport(record, this.userId)
+      }
+    }));
+    const handRequests = plan.records.hands.map((record) => ({
+      PutRequest: {
+        Item: storedRestoreHand(record, this.userId)
+      }
+    }));
+    const bankrollRequests = [
+      ...plan.records.bankrollSessions.map((record) => ({
+        PutRequest: {
+          Item: storedRestoreSession(record, this.userId)
+        }
+      })),
+      ...plan.records.bankrollTransactions.map((record) => ({
+        PutRequest: {
+          Item: storedRestoreTransaction(record, this.userId)
+        }
+      }))
+    ];
+
+    for (let index = 0; index < importRequests.length; index += 25) {
+      await batchWriteAll(dynamo, sdk, {
+        [this.importsTable]: importRequests.slice(index, index + 25)
+      });
+    }
+
+    for (let index = 0; index < handRequests.length; index += 25) {
+      await batchWriteAll(dynamo, sdk, {
+        [this.handsTable]: handRequests.slice(index, index + 25)
+      });
+    }
+
+    for (let index = 0; index < bankrollRequests.length; index += 25) {
+      await batchWriteAll(dynamo, sdk, {
+        [this.sessionsTable]: bankrollRequests.slice(index, index + 25)
+      });
+    }
+
+    return workspaceRestoreResult(plan, { restoredAt });
   }
 
   async deleteImport(importId) {
