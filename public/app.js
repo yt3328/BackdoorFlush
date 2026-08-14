@@ -1,6 +1,6 @@
 import { createAuthClient } from "./auth.js";
 
-const appVersion = "2.4.0";
+const appVersion = "2.5.0";
 const shareHashPrefix = "#review-share=";
 const positionOrder = ["BTN", "CO", "HJ", "LJ", "MP", "UTG+1", "UTG", "STR", "SB", "BB", "Unknown"];
 const streetOrder = ["hole-cards", "flop", "turn", "river", "show-down"];

@@ -4,7 +4,7 @@ Backdoor Flush is a small hand-history desk for reviewing poker sessions.
 
 The local app lets you upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, track bankroll sessions, and run quick equity checks.
 
-Version 2.4 adds privacy-aware session review sharing, filtered review queue exports, compact copied summaries, and richer session report sections.
+Version 2.5 adds a premium interface refresh with a cinematic poker-table landing visual, deeper dashboard hierarchy, refined cards, sharper controls, and more polished review/table surfaces.
 
 ## Run it
 
@@ -46,6 +46,7 @@ Local mode:
 - Exports the current session view to CSV, the transaction ledger to CSV, filtered selected-session hands to CSV, and selected-session review reports to Markdown.
 - Exports a filtered session review queue to CSV and copies compact session summaries for mentor or friend feedback.
 - Creates read-only session review links with privacy controls for amounts, location, player names, and notes.
+- Presents the workspace with a premium visual system, elevated dashboard cards, refined controls, and a cinematic poker-table landing view.
 - Exports a full workspace JSON backup through the local or cloud API.
 - Restores a workspace Backup JSON after previewing sessions, transactions, imports, hands, and duplicates.
 - Saves tags and notes on individual hands.
