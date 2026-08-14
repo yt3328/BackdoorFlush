@@ -1,6 +1,7 @@
 import { createAuthClient } from "./auth.js";
 
-const appVersion = "2.3.0";
+const appVersion = "2.4.0";
+const shareHashPrefix = "#review-share=";
 const positionOrder = ["BTN", "CO", "HJ", "LJ", "MP", "UTG+1", "UTG", "STR", "SB", "BB", "Unknown"];
 const streetOrder = ["hole-cards", "flop", "turn", "river", "show-down"];
 const streetLabels = {
@@ -17,7 +18,8 @@ const viewTitles = {
   hands: "Hands",
   live: "Live Hand",
   equity: "Equity",
-  imports: "Imports"
+  imports: "Imports",
+  shared: "Shared Review"
 };
 const homePeriodOptions = [
   { value: "7d", label: "Last 7 Days", days: 7 },
@@ -160,6 +162,13 @@ const state = {
   bankrollTransactionSummary: emptyTransactionSummary,
   bankrollImportPreview: null,
   workspaceRestorePreview: null,
+  sharedReview: null,
+  sessionShareOptions: {
+    hideAmounts: true,
+    hideLocation: true,
+    anonymizePlayers: true,
+    includeNotes: false
+  },
   bankrollFilters: { ...emptyBankrollFilters },
   sessionDetailFilters: { ...emptySessionDetailFilters },
   homePeriod: "30d",
@@ -208,6 +217,7 @@ const elements = {
   title: document.querySelector("#page-title"),
   navButtons: [...document.querySelectorAll(".nav-button")],
   views: [...document.querySelectorAll(".view")],
+  sharedReview: document.querySelector("#shared-review"),
   authStatus: document.querySelector("#auth-status"),
   signIn: document.querySelector("#sign-in"),
   signOut: document.querySelector("#sign-out"),
@@ -383,6 +393,18 @@ function canUsePrivateApi() {
 function workspaceModeMeta() {
   const signedIn = auth.isSignedIn();
 
+  if (state.sharedReview) {
+    return {
+      mode: "shared",
+      topbarLabel: "Shared review",
+      title: "Shared review",
+      badge: "Read-only",
+      detail: "This is a read-only session review link. It does not load or change account data.",
+      saveTarget: "Shared review is read-only.",
+      saveToast: "Shared review is read-only."
+    };
+  }
+
   if (state.demoMode) {
     return {
       mode: "demo",
@@ -480,7 +502,7 @@ function clearDashboardData() {
 
 function renderAuthState() {
   const signedIn = auth.isSignedIn();
-  const needsSignIn = auth.enabled && !signedIn && !state.demoMode && !state.showLanding;
+  const needsSignIn = auth.enabled && !signedIn && !state.demoMode && !state.sharedReview && !state.showLanding;
   const mode = workspaceModeMeta();
 
   elements.landing.hidden = !state.showLanding;
@@ -488,13 +510,13 @@ function renderAuthState() {
 
   elements.authStatus.textContent = mode.topbarLabel;
   elements.authStatus.dataset.mode = mode.mode;
-  elements.signIn.hidden = !auth.enabled || signedIn || state.demoMode;
-  elements.signOut.hidden = !auth.enabled || !signedIn || state.demoMode;
+  elements.signIn.hidden = !auth.enabled || signedIn || state.demoMode || Boolean(state.sharedReview);
+  elements.signOut.hidden = !auth.enabled || !signedIn || state.demoMode || Boolean(state.sharedReview);
   elements.authNotice.hidden = !needsSignIn;
   elements.demoBanner.hidden = !state.demoMode;
   elements.loadDemo.textContent = state.demoMode ? "Reload Demo" : "Explore Demo";
   elements.clearSession.textContent = state.demoMode ? "Exit Demo" : "Clear Hands";
-  elements.refresh.disabled = needsSignIn || state.demoMode;
+  elements.refresh.disabled = needsSignIn || state.demoMode || Boolean(state.sharedReview);
   document.body.classList.toggle("landing-open", state.showLanding);
   document.body.classList.toggle("demo-mode", state.demoMode);
   document.body.classList.toggle("signed-out", needsSignIn);
@@ -1218,7 +1240,9 @@ function loadDemoExperience({ quiet = false } = {}) {
   const hands = demoHands();
   const transactions = demoTransactions();
 
+  clearShareHash();
   clearDashboardData();
+  state.sharedReview = null;
   state.demoMode = true;
   state.showLanding = false;
   state.homePeriod = "30d";
@@ -1250,6 +1274,8 @@ function loadDemoExperience({ quiet = false } = {}) {
 
 async function startTracking({ targetView = "sessions" } = {}) {
   state.demoMode = false;
+  state.sharedReview = null;
+  clearShareHash();
 
   if (auth.enabled && !auth.isSignedIn()) {
     await auth.signIn();
@@ -2311,6 +2337,25 @@ function sessionReviewMarkdown(session) {
   const queue = sessionReviewQueue(filteredHands);
   const estimatedResult = linkedHands.reduce((sum, hand) => sum + estimatedHeroResult(hand), 0);
   const gap = session.profit - estimatedResult;
+  const tagRows = demoTagSummary(filteredHands).map((row) => [
+    tagLabel(row.tag),
+    row.handCount,
+    `${formatNumber(row.reviewedPct, 1)}%`,
+    formatCurrency(row.totalResult, { signed: true })
+  ]);
+  const biggestRows = [...filteredHands]
+    .sort((a, b) => Math.abs(estimatedHeroResult(b)) - Math.abs(estimatedHeroResult(a)))
+    .slice(0, 8)
+    .map((hand) => [
+      hand.handNumber,
+      heroPosition(hand),
+      hand.hero ? cardsText(hand.holeCards[hand.hero] ?? []) : "",
+      cardsText(hand.board ?? []),
+      formatCurrency(estimatedHeroResult(hand), { signed: true }),
+      formatCurrency(trackedPot(hand)),
+      handTags(hand).map(tagLabel).join(", "),
+      hand.reviewedAt ? "Reviewed" : "Open"
+    ]);
   const importRows = linkedImports.map((item) => [
     item.name,
     item.source,
@@ -2366,6 +2411,18 @@ function sessionReviewMarkdown(session) {
     `- Filtered captured result: ${formatCurrency(filteredStats.totalResult, { signed: true })}`,
     `- Filtered biggest pot: ${formatCurrency(filteredStats.biggestPot)}`,
     "",
+    "## Tagged Themes",
+    "",
+    tagRows.length
+      ? markdownTable(["Theme", "Hands", "Reviewed", "Captured Result"], tagRows)
+      : "No tags are saved on the currently filtered hands.",
+    "",
+    "## Biggest Hands",
+    "",
+    biggestRows.length
+      ? markdownTable(["Hand", "Position", "Hero Cards", "Board", "Result", "Pot", "Tags", "Status"], biggestRows)
+      : "No linked hands match the current filters.",
+    "",
     "## Linked Imports",
     "",
     importRows.length
@@ -2406,6 +2463,301 @@ function exportSessionReviewReport(sessionIdValue = state.selectedSessionId) {
     mimeType: "text/markdown;charset=utf-8"
   });
   showToast("Session review report exported.");
+}
+
+function visibleAmount(value, options = state.sessionShareOptions, formatOptions = {}) {
+  return options.hideAmounts ? "Hidden" : formatCurrency(value, formatOptions);
+}
+
+function visibleLocation(session, options = state.sessionShareOptions) {
+  return options.hideLocation ? "Hidden location" : session.location;
+}
+
+function visibleTable(hand, options = state.sessionShareOptions) {
+  return options.hideLocation ? "Hidden table" : hand.tableName ?? "Table";
+}
+
+function privacySummary(options = state.sessionShareOptions) {
+  const parts = [];
+  if (options.hideAmounts) {
+    parts.push("amounts hidden");
+  }
+  if (options.hideLocation) {
+    parts.push("location hidden");
+  }
+  if (options.anonymizePlayers) {
+    parts.push("player names anonymized");
+  }
+  if (!options.includeNotes) {
+    parts.push("notes excluded");
+  }
+
+  return parts.length ? parts.join(" / ") : "full session details";
+}
+
+function sharedPlayerName(name, options, nameMap) {
+  if (!options.anonymizePlayers) {
+    return name;
+  }
+
+  if (!nameMap.has(name)) {
+    nameMap.set(name, nameMap.size === 0 ? "Hero" : `Player ${nameMap.size}`);
+  }
+
+  return nameMap.get(name);
+}
+
+function sessionQueueExportRows(spots, session) {
+  return [
+    ["Hand", "Reasons", "Position", "Hero Cards", "Board", "Result", "Pot", "Tags", "Status"],
+    ...spots.map((spot) => {
+      const hand = handById(spot.id);
+
+      return [
+        spot.handNumber,
+        spot.reasons.join("; "),
+        hand ? heroPosition(hand) : "",
+        cardsText(spot.heroCards),
+        cardsText(spot.board),
+        spot.estimatedHeroResult,
+        spot.trackedPot,
+        spot.tags.map(tagLabel).join("; "),
+        spot.reviewedAt ? "reviewed" : "open"
+      ];
+    })
+  ];
+}
+
+function exportSessionQueueCsv(sessionIdValue = state.selectedSessionId) {
+  const session = sessionById(sessionIdValue);
+  if (!session) {
+    showToast("Select a session first.");
+    return;
+  }
+
+  const spots = sessionReviewQueue(filterSessionHands(handsForSession(sessionIdValue), session));
+  if (spots.length === 0) {
+    showToast("No review queue hands match the current filters.");
+    return;
+  }
+
+  downloadTextFile({
+    filename: `backdoor-flush-${slugPart(sessionLabel(session), "session")}-queue-${exportDateToken()}.csv`,
+    text: rowsToCsv(sessionQueueExportRows(spots, session)),
+    mimeType: "text/csv;charset=utf-8"
+  });
+  showToast(`Exported ${spots.length} review spots.`);
+}
+
+function buildSessionSharePayload(session, options = state.sessionShareOptions) {
+  const id = sessionId(session);
+  const linkedHands = handsForSession(id);
+  const filteredHands = filterSessionHands(linkedHands, session);
+  const allStats = sessionHandStats(linkedHands);
+  const filteredStats = sessionHandStats(filteredHands);
+  const queue = sessionReviewQueue(filteredHands).slice(0, 20);
+  const biggestHands = [...filteredHands]
+    .sort((a, b) => Math.abs(estimatedHeroResult(b)) - Math.abs(estimatedHeroResult(a)))
+    .slice(0, 10);
+  const estimatedResult = linkedHands.reduce((sum, hand) => sum + estimatedHeroResult(hand), 0);
+  const nameMap = new Map();
+
+  return {
+    app: "Backdoor Flush",
+    type: "session-review-share",
+    schemaVersion: appVersion,
+    generatedAt: new Date().toISOString(),
+    privacy: {
+      ...options,
+      summary: privacySummary(options)
+    },
+    session: {
+      label: `${formatDate(session.date)} ${visibleLocation(session, options)} ${session.stakes || session.gameType}`.trim(),
+      date: session.date,
+      location: visibleLocation(session, options),
+      gameType: session.gameType,
+      stakes: session.stakes,
+      hours: formatNumber(session.hours, 1),
+      profit: visibleAmount(session.profit, options, { signed: true }),
+      hourlyRate: visibleAmount(session.hourlyRate, options, { signed: true }),
+      bbPerHour: formatNumber(session.bbPerHour, 1),
+      notes: options.includeNotes ? session.notes || "" : ""
+    },
+    filters: {
+      bankroll: bankrollViewParts(),
+      linkedHands: sessionHandFilterSummary(filteredHands, linkedHands)
+    },
+    summary: {
+      linkedHands: linkedHands.length,
+      filteredHands: filteredHands.length,
+      openReviews: allStats.openHands,
+      reviewedHands: allStats.reviewedHands,
+      taggedHands: allStats.taggedHands,
+      capturedResult: visibleAmount(estimatedResult, options, { signed: true }),
+      filteredCapturedResult: visibleAmount(filteredStats.totalResult, options, { signed: true }),
+      uncapturedGap: visibleAmount(session.profit - estimatedResult, options, { signed: true }),
+      biggestPot: visibleAmount(filteredStats.biggestPot, options)
+    },
+    queue: queue.map((spot) => {
+      const hand = handById(spot.id);
+      const heroName = hand ? sharedPlayerName(hand.hero ?? "Hero", options, nameMap) : "Hero";
+
+      return {
+        handNumber: spot.handNumber,
+        tableName: hand ? visibleTable(hand, options) : "Table",
+        reasons: spot.reasons,
+        hero: heroName,
+        position: hand ? heroPosition(hand) : "",
+        heroCards: spot.heroCards,
+        board: spot.board,
+        result: visibleAmount(spot.estimatedHeroResult, options, { signed: true }),
+        pot: visibleAmount(spot.trackedPot, options),
+        tags: spot.tags.map(tagLabel),
+        status: spot.reviewedAt ? "Reviewed" : "Open"
+      };
+    }),
+    biggestHands: biggestHands.map((hand) => ({
+      handNumber: hand.handNumber,
+      tableName: visibleTable(hand, options),
+      hero: sharedPlayerName(hand.hero ?? "Hero", options, nameMap),
+      position: heroPosition(hand),
+      heroCards: hand.hero ? hand.holeCards[hand.hero] ?? [] : [],
+      board: hand.board ?? [],
+      result: visibleAmount(estimatedHeroResult(hand), options, { signed: true }),
+      pot: visibleAmount(trackedPot(hand), options),
+      tags: handTags(hand).map(tagLabel),
+      status: hand.reviewedAt ? "Reviewed" : "Open"
+    })),
+    tagThemes: demoTagSummary(filteredHands).slice(0, 8).map((row) => ({
+      tag: tagLabel(row.tag),
+      hands: row.handCount,
+      reviewed: row.reviewedCount,
+      result: visibleAmount(row.totalResult, options, { signed: true })
+    }))
+  };
+}
+
+function sessionCompactSummary(sessionIdValue = state.selectedSessionId) {
+  const session = sessionById(sessionIdValue);
+  if (!session) {
+    return "";
+  }
+
+  const options = state.sessionShareOptions;
+  const id = sessionId(session);
+  const linkedHands = handsForSession(id);
+  const filteredHands = filterSessionHands(linkedHands, session);
+  const stats = sessionHandStats(filteredHands);
+  const queue = sessionReviewQueue(filteredHands);
+  const topTags = demoTagSummary(filteredHands).slice(0, 3).map((row) => tagLabel(row.tag));
+
+  return [
+    `${formatDate(session.date)} ${visibleLocation(session, options)} ${session.stakes || session.gameType} review`.trim(),
+    `Privacy: ${privacySummary(options)}`,
+    `Logged result: ${visibleAmount(session.profit, options, { signed: true })}`,
+    `Linked hands: ${linkedHands.length}; filtered hands: ${filteredHands.length}; open reviews: ${stats.openHands}`,
+    `Captured result in current filter: ${visibleAmount(stats.totalResult, options, { signed: true })}`,
+    `Top review spots: ${queue.slice(0, 3).map((spot) => `#${spot.handNumber} (${spot.reasons.join(", ")})`).join("; ") || "none"}`,
+    `Themes: ${topTags.join(", ") || "none yet"}`,
+    `Filters: ${sessionHandFilterSummary(filteredHands, linkedHands)}`
+  ].join("\n");
+}
+
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.append(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
+}
+
+function encodeSharePayload(payload) {
+  const text = JSON.stringify(payload);
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.slice(index, index + 0x8000));
+  }
+
+  return btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/g, "");
+}
+
+function decodeSharePayload(value) {
+  const padded = value.replaceAll("-", "+").replaceAll("_", "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+function sharePayloadFromHash() {
+  if (!window.location.hash.startsWith(shareHashPrefix)) {
+    return null;
+  }
+
+  const payload = decodeSharePayload(window.location.hash.slice(shareHashPrefix.length));
+  if (payload?.app !== "Backdoor Flush" || payload?.type !== "session-review-share") {
+    throw new Error("This review link is not a Backdoor Flush session share.");
+  }
+
+  return payload;
+}
+
+function openSharedReviewFromHash() {
+  const payload = sharePayloadFromHash();
+  if (!payload) {
+    return false;
+  }
+
+  state.sharedReview = payload;
+  state.demoMode = false;
+  state.showLanding = false;
+  setView("shared");
+  render();
+
+  return true;
+}
+
+function clearShareHash() {
+  if (window.location.hash.startsWith(shareHashPrefix)) {
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  }
+}
+
+async function copySessionShareLink(sessionIdValue = state.selectedSessionId) {
+  const session = sessionById(sessionIdValue);
+  if (!session) {
+    showToast("Select a session first.");
+    return;
+  }
+
+  const payload = buildSessionSharePayload(session);
+  const url = `${window.location.origin}${window.location.pathname}#review-share=${encodeSharePayload(payload)}`;
+  await copyText(url);
+  showToast(`Review link copied with ${payload.privacy.summary}.`);
+}
+
+async function copySessionSummary(sessionIdValue = state.selectedSessionId) {
+  const summary = sessionCompactSummary(sessionIdValue);
+  if (!summary) {
+    showToast("Select a session first.");
+    return;
+  }
+
+  await copyText(summary);
+  showToast("Session summary copied.");
 }
 
 function reviewQueuePath() {
@@ -4671,6 +5023,36 @@ function renderSessionDetail(visibleSessions = state.bankrollSessions) {
       </div>
       <p class="session-capture-note">Logged result is the bankroll record. Captured-hand estimate only sums saved or imported hands linked to this session, so the gap usually means not every hand from the session is recorded.</p>
 
+      <div class="session-share-panel">
+        <div>
+          <h4>Share Review</h4>
+          <p>Creates a read-only review package from the current linked-hand filters.</p>
+        </div>
+        <div class="share-options" aria-label="Session share privacy options">
+          <label>
+            <input type="checkbox" data-session-share-option="hideAmounts" ${state.sessionShareOptions.hideAmounts ? "checked" : ""}>
+            Hide amounts
+          </label>
+          <label>
+            <input type="checkbox" data-session-share-option="hideLocation" ${state.sessionShareOptions.hideLocation ? "checked" : ""}>
+            Hide location
+          </label>
+          <label>
+            <input type="checkbox" data-session-share-option="anonymizePlayers" ${state.sessionShareOptions.anonymizePlayers ? "checked" : ""}>
+            Anonymize players
+          </label>
+          <label>
+            <input type="checkbox" data-session-share-option="includeNotes" ${state.sessionShareOptions.includeNotes ? "checked" : ""}>
+            Include notes
+          </label>
+        </div>
+        <div class="session-share-actions">
+          <button class="button secondary" type="button" data-export-session-queue="${escapeHtml(id)}" ${sessionQueue.length === 0 ? "disabled" : ""}>Queue CSV</button>
+          <button class="button secondary" type="button" data-copy-session-summary="${escapeHtml(id)}">Copy Summary</button>
+          <button class="button" type="button" data-copy-session-share="${escapeHtml(id)}" ${filteredHands.length === 0 ? "disabled" : ""}>Copy Link</button>
+        </div>
+      </div>
+
       <div class="session-drilldown-controls">
         <div>
           <h4>Linked Hand Filters</h4>
@@ -5376,6 +5758,140 @@ function renderImports() {
     .join("");
 }
 
+function sharedTags(tags = []) {
+  return tags.length
+    ? `<div class="tag-list">${tags.map((tag) => `<span class="tag-chip">${escapeHtml(tag)}</span>`).join("")}</div>`
+    : "";
+}
+
+function renderSharedHandRows(rows = [], emptyMessage = "No hands included in this share.") {
+  return rows.length
+    ? rows.map((row) => `
+        <article class="shared-hand-row">
+          <div>
+            <div class="session-row-title">
+              <strong>#${escapeHtml(row.handNumber)} / ${escapeHtml(row.tableName ?? "Table")}</strong>
+              <span class="pill">${escapeHtml(row.status ?? "Open")}</span>
+            </div>
+            ${renderCards([...(row.heroCards ?? []), ...(row.board ?? [])])}
+            <p>${escapeHtml(row.position ?? "")} / ${escapeHtml(row.hero ?? "Hero")} / ${escapeHtml(row.pot ?? "Pot hidden")} pot</p>
+            ${row.reasons?.length ? `<p>${escapeHtml(row.reasons.join(" / "))}</p>` : ""}
+            ${sharedTags(row.tags ?? [])}
+          </div>
+          <strong>${escapeHtml(row.result ?? "")}</strong>
+        </article>
+      `).join("")
+    : `<p class="muted-line">${escapeHtml(emptyMessage)}</p>`;
+}
+
+function renderSharedReview() {
+  if (!elements.sharedReview) {
+    return;
+  }
+
+  const payload = state.sharedReview;
+  if (!payload) {
+    elements.sharedReview.innerHTML = renderEmptyState({
+      title: "No shared review loaded",
+      body: "Open a Backdoor Flush review link to see a read-only session package.",
+      primaryLabel: "Open App",
+      primaryView: "overview",
+      compact: true
+    });
+    return;
+  }
+
+  const summary = payload.summary ?? {};
+  const session = payload.session ?? {};
+  const themes = payload.tagThemes ?? [];
+
+  elements.sharedReview.innerHTML = `
+    <div class="shared-review-head">
+      <div>
+        <p class="eyebrow">Shared Review</p>
+        <h3>${escapeHtml(session.label ?? "Session Review")}</h3>
+        <p>${escapeHtml(formatLongDate(session.date))} / ${escapeHtml(session.gameType ?? "cash")} / ${escapeHtml(session.stakes ?? "")} / ${escapeHtml(session.hours ?? "0.0")} hours</p>
+      </div>
+      <div class="shared-review-actions">
+        <span class="pill">${escapeHtml(payload.privacy?.summary ?? "privacy settings")}</span>
+        <button class="button secondary" type="button" data-copy-shared-link>Copy Link</button>
+        <button class="button" type="button" data-start-tracking>Open App</button>
+      </div>
+    </div>
+
+    <div class="detail-summary compact shared-summary">
+      <div>
+        <span class="subtle">Logged result</span>
+        <strong>${escapeHtml(session.profit ?? "Hidden")}</strong>
+      </div>
+      <div>
+        <span class="subtle">Captured result</span>
+        <strong>${escapeHtml(summary.capturedResult ?? "Hidden")}</strong>
+      </div>
+      <div>
+        <span class="subtle">Open reviews</span>
+        <strong>${escapeHtml(summary.openReviews ?? 0)}</strong>
+      </div>
+      <div>
+        <span class="subtle">Linked hands</span>
+        <strong>${escapeHtml(summary.linkedHands ?? 0)}</strong>
+      </div>
+    </div>
+
+    <div class="session-drilldown-grid">
+      <div class="session-mini-panel">
+        <h4>Review Scope</h4>
+        <div class="audit-list">
+          <p><strong>${escapeHtml(summary.filteredHands ?? 0)}</strong><span>filtered hands</span></p>
+          <p><strong>${escapeHtml(summary.reviewedHands ?? 0)}</strong><span>reviewed hands</span></p>
+          <p><strong>${escapeHtml(summary.taggedHands ?? 0)}</strong><span>tagged hands</span></p>
+          <p><strong>${escapeHtml(summary.biggestPot ?? "Hidden")}</strong><span>biggest pot</span></p>
+        </div>
+        <p class="muted-line">${escapeHtml((payload.filters?.bankroll ?? []).join(" / ") || "All sessions")}</p>
+        <p class="muted-line">${escapeHtml(payload.filters?.linkedHands ?? "")}</p>
+      </div>
+      <div class="session-mini-panel">
+        <h4>Tagged Themes</h4>
+        ${
+          themes.length
+            ? themes.map((theme) => `
+                <p class="shared-theme-row">
+                  <strong>${escapeHtml(theme.tag)}</strong>
+                  <span>${escapeHtml(theme.hands)} hands / ${escapeHtml(theme.reviewed)} reviewed / ${escapeHtml(theme.result)}</span>
+                </p>
+              `).join("")
+            : '<p class="muted-line">No tagged themes included.</p>'
+        }
+      </div>
+    </div>
+
+    <div class="linked-section">
+      <div class="linked-section-head">
+        <h4>Review Queue</h4>
+        <span>${escapeHtml((payload.queue ?? []).length)} hands</span>
+      </div>
+      ${renderSharedHandRows(payload.queue ?? [], "No review queue hands included.")}
+    </div>
+
+    <div class="linked-section">
+      <div class="linked-section-head">
+        <h4>Biggest Hands</h4>
+        <span>${escapeHtml((payload.biggestHands ?? []).length)} hands</span>
+      </div>
+      ${renderSharedHandRows(payload.biggestHands ?? [], "No biggest-hand list included.")}
+    </div>
+
+    ${
+      session.notes
+        ? `<div class="linked-section session-reflection">
+            <h4>Notes</h4>
+            <p>${escapeHtml(session.notes)}</p>
+          </div>`
+        : ""
+    }
+  `;
+}
+
 function render() {
   renderAuthState();
 
@@ -5418,6 +5934,7 @@ function render() {
   renderHomeInsights();
   renderBankrollImportPreview();
   renderWorkspaceRestorePreview();
+  renderSharedReview();
   renderTransactions();
   renderSessions();
   renderHands();
@@ -5908,6 +6425,13 @@ document.addEventListener("click", (event) => {
     elements.handTagFilter.value = reviewTagTarget.dataset.openReviewTag;
     elements.handReviewFilter.value = "false";
     renderHands();
+    return;
+  }
+
+  const copySharedLinkTarget = event.target.closest("[data-copy-shared-link]");
+  if (copySharedLinkTarget) {
+    event.preventDefault();
+    copyText(window.location.href).then(() => showToast("Shared review link copied.")).catch((error) => showToast(error.message));
     return;
   }
 
@@ -6708,6 +7232,24 @@ elements.exportWorkspaceJson.addEventListener("click", () => {
 });
 
 elements.sessionDetail.addEventListener("click", (event) => {
+  const queueTarget = event.target.closest("[data-export-session-queue]");
+  if (queueTarget) {
+    exportSessionQueueCsv(queueTarget.dataset.exportSessionQueue);
+    return;
+  }
+
+  const summaryTarget = event.target.closest("[data-copy-session-summary]");
+  if (summaryTarget) {
+    copySessionSummary(summaryTarget.dataset.copySessionSummary).catch((error) => showToast(error.message));
+    return;
+  }
+
+  const shareTarget = event.target.closest("[data-copy-session-share]");
+  if (shareTarget) {
+    copySessionShareLink(shareTarget.dataset.copySessionShare).catch((error) => showToast(error.message));
+    return;
+  }
+
   const reportTarget = event.target.closest("[data-export-session-report]");
   if (reportTarget) {
     exportSessionReviewReport(reportTarget.dataset.exportSessionReport);
@@ -6749,6 +7291,13 @@ elements.sessionDetail.addEventListener("click", (event) => {
 });
 
 elements.sessionDetail.addEventListener("change", (event) => {
+  const shareTarget = event.target.closest("[data-session-share-option]");
+  if (shareTarget) {
+    state.sessionShareOptions[shareTarget.dataset.sessionShareOption] = shareTarget.checked;
+    renderSessionDetail(filteredBankrollSessions());
+    return;
+  }
+
   const target = event.target.closest("[data-session-hand-filter]");
   if (!target) {
     return;
@@ -6894,6 +7443,14 @@ async function boot() {
   }
 
   try {
+    if (openSharedReviewFromHash()) {
+      return;
+    }
+  } catch (error) {
+    showToast(error.message);
+  }
+
+  try {
     await auth.finishRedirect();
   } catch (error) {
     showToast(error.message);
@@ -6911,5 +7468,22 @@ async function boot() {
   clearDashboardData();
   render();
 }
+
+window.addEventListener("hashchange", () => {
+  try {
+    if (openSharedReviewFromHash()) {
+      return;
+    }
+
+    if (state.view === "shared") {
+      state.sharedReview = null;
+      state.showLanding = auth.enabled ? !auth.isSignedIn() : false;
+      setView("overview");
+      render();
+    }
+  } catch (error) {
+    showToast(error.message);
+  }
+});
 
 boot().catch((error) => showToast(error.message));
