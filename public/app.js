@@ -1,6 +1,6 @@
 import { createAuthClient } from "./auth.js";
 
-const appVersion = "2.5.0";
+const appVersion = "2.6.0";
 const shareHashPrefix = "#review-share=";
 const positionOrder = ["BTN", "CO", "HJ", "LJ", "MP", "UTG+1", "UTG", "STR", "SB", "BB", "Unknown"];
 const streetOrder = ["hole-cards", "flop", "turn", "river", "show-down"];
@@ -45,6 +45,8 @@ const suggestedReviewTags = [
   "position"
 ];
 const onboardingStorageKey = "backdoor-flush.onboarding-entered";
+const onboardingPanelStorageKey = "backdoor-flush.onboarding-panel-dismissed";
+const backupExportStorageKey = "backdoor-flush.backup-exported";
 const liveTableSizes = [2, 3, 4, 5, 6, 7, 8, 9, 10];
 const livePositionOptions = ["BTN", "SB", "BB", "STR", "UTG", "UTG+1", "MP", "MP+1", "LJ", "HJ", "CO"];
 const liveDefaultPositions = {
@@ -162,6 +164,9 @@ const state = {
   bankrollTransactionSummary: emptyTransactionSummary,
   bankrollImportPreview: null,
   workspaceRestorePreview: null,
+  workspaceError: null,
+  onboardingDismissed: readStorageFlag(onboardingPanelStorageKey),
+  backupExported: readStorageFlag(backupExportStorageKey),
   sharedReview: null,
   sessionShareOptions: {
     hideAmounts: true,
@@ -224,6 +229,8 @@ const elements = {
   authNotice: document.querySelector("#auth-notice"),
   demoBanner: document.querySelector("#demo-banner"),
   workspaceHealth: document.querySelector("#workspace-health"),
+  workspaceAlert: document.querySelector("#workspace-alert"),
+  onboardingPanel: document.querySelector("#onboarding-panel"),
   exitDemo: document.querySelector("#exit-demo"),
   loadDemo: document.querySelector("#load-demo"),
   clearSession: document.querySelector("#clear-session"),
@@ -339,6 +346,52 @@ const elements = {
   }
 };
 
+function readStorageFlag(key) {
+  try {
+    return window.localStorage.getItem(key) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function writeStorageFlag(key, value) {
+  try {
+    if (value) {
+      window.localStorage.setItem(key, "true");
+    } else {
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    // Local storage can be unavailable in strict browser privacy modes.
+  }
+}
+
+function friendlyApiError(error) {
+  const rawMessage = String(error?.message ?? error ?? "Request failed.");
+
+  if (/failed to fetch|load failed|networkerror|could not reach/i.test(rawMessage)) {
+    return {
+      title: "Could not reach the workspace API",
+      message: "Your current screen was left untouched. Check the connection, then refresh the workspace.",
+      detail: "If this keeps happening on the live site, the API Gateway or CloudFront configuration may need attention."
+    };
+  }
+
+  if (/unauthorized|forbidden|401|403|sign in/i.test(rawMessage)) {
+    return {
+      title: "Sign in again to keep saving",
+      message: "Your account session may have expired. Sign in again, then retry the action.",
+      detail: rawMessage
+    };
+  }
+
+  return {
+    title: "Workspace action failed",
+    message: "Backdoor Flush could not finish the last request. Your saved data was not cleared.",
+    detail: rawMessage
+  };
+}
+
 async function api(path, options = {}) {
   if (state.demoMode) {
     throw new Error("Demo mode is read-only. Exit demo to use your workspace.");
@@ -354,11 +407,16 @@ async function api(path, options = {}) {
     headers.authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${apiBase}${path}`, {
-    ...options,
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined
-  });
+  let response;
+  try {
+    response = await fetch(`${apiBase}${path}`, {
+      ...options,
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined
+    });
+  } catch {
+    throw new Error("Could not reach the Backdoor Flush API. Check your connection, then try Refresh.");
+  }
 
   const text = await response.text();
   let payload = {};
@@ -455,7 +513,10 @@ function workspaceModeMeta() {
 function markWorkspaceSaved(message = "Workspace updated") {
   state.lastSavedAt = new Date().toISOString();
   state.lastSaveMessage = message;
+  state.workspaceError = null;
   renderWorkspaceHealth();
+  renderWorkspaceAlert();
+  renderOnboardingPanel();
 
   return `${message}. ${workspaceModeMeta().saveToast}`;
 }
@@ -469,6 +530,7 @@ function clearDashboardData() {
   state.bankrollTransactionSummary = emptyTransactionSummary;
   state.bankrollImportPreview = null;
   state.workspaceRestorePreview = null;
+  state.workspaceError = null;
   state.bankrollFilters = { ...emptyBankrollFilters };
   state.sessionDetailFilters = { ...emptySessionDetailFilters };
   state.players = [];
@@ -1244,6 +1306,7 @@ function loadDemoExperience({ quiet = false } = {}) {
   clearDashboardData();
   state.sharedReview = null;
   state.demoMode = true;
+  state.workspaceError = null;
   state.showLanding = false;
   state.homePeriod = "30d";
   state.bankrollSessions = sessions;
@@ -1275,6 +1338,7 @@ function loadDemoExperience({ quiet = false } = {}) {
 async function startTracking({ targetView = "sessions" } = {}) {
   state.demoMode = false;
   state.sharedReview = null;
+  state.workspaceError = null;
   clearShareHash();
 
   if (auth.enabled && !auth.isSignedIn()) {
@@ -2303,6 +2367,9 @@ async function exportWorkspaceJson() {
     text: `${JSON.stringify(payload, null, 2)}\n`,
     mimeType: "application/json;charset=utf-8"
   });
+  state.backupExported = true;
+  writeStorageFlag(backupExportStorageKey, true);
+  renderOnboardingPanel();
   showToast("Workspace backup exported.");
 }
 
@@ -3028,8 +3095,20 @@ function renderWorkspaceHealth() {
     : state.lastSyncedAt
       ? `Last refreshed / ${formatTimestamp(state.lastSyncedAt)}`
       : "No workspace activity yet";
+  const hasRecords = state.hands.length > 0 || state.imports.length > 0 || state.bankrollSessions.length > 0 || state.bankrollTransactions.length > 0;
+  const actions = state.sharedReview
+    ? `
+      <button class="button secondary" type="button" data-start-tracking>Open App</button>
+    `
+    : `
+      <button class="button secondary" type="button" data-jump-view="sessions">Log Session</button>
+      <button class="button secondary" type="button" data-jump-view="live">Build Hand</button>
+      <button class="button secondary" type="button" data-jump-view="imports">Import</button>
+      <button class="button ghost" type="button" data-export-workspace-json ${hasRecords ? "" : "disabled"}>Backup</button>
+    `;
 
   elements.workspaceHealth.hidden = false;
+  elements.workspaceHealth.className = `workspace-health ${mode.mode}`;
   elements.workspaceHealth.innerHTML = `
     <div class="workspace-health-head">
       <div>
@@ -3041,6 +3120,9 @@ function renderWorkspaceHealth() {
         <span>${escapeHtml(mode.saveTarget)}</span>
         <strong>${escapeHtml(lastActivity)}</strong>
       </div>
+    </div>
+    <div class="workspace-health-actions" aria-label="Workspace actions">
+      ${actions}
     </div>
     <div class="workspace-health-grid">
       <div>
@@ -3069,6 +3151,169 @@ function renderWorkspaceHealth() {
         ? `Needs attention: ${attentionItems.join(", ")}.`
         : "Data looks connected for the current workspace."
     )}</p>
+  `;
+}
+
+function renderWorkspaceAlert() {
+  if (!elements.workspaceAlert) {
+    return;
+  }
+
+  if (state.showLanding || state.sharedReview || !state.workspaceError) {
+    elements.workspaceAlert.hidden = true;
+    elements.workspaceAlert.innerHTML = "";
+    return;
+  }
+
+  const error = state.workspaceError;
+  elements.workspaceAlert.hidden = false;
+  elements.workspaceAlert.innerHTML = `
+    <div>
+      <strong>${escapeHtml(error.title)}</strong>
+      <p>${escapeHtml(error.message)}</p>
+      ${error.detail ? `<small>${escapeHtml(error.detail)}</small>` : ""}
+    </div>
+    <div class="workspace-alert-actions">
+      ${auth.enabled && !auth.isSignedIn() ? '<button class="button secondary" type="button" data-start-tracking>Sign In</button>' : ""}
+      <button class="button" type="button" data-retry-refresh>Retry</button>
+      <button class="button ghost" type="button" data-clear-workspace-alert>Dismiss</button>
+    </div>
+  `;
+}
+
+function workspaceSetupSteps() {
+  const linkedHands = state.hands.filter((hand) => hand.sessionId).length;
+  const reviewWork = savedHandReviewCount() + savedDecisionReviewCount();
+  const hasData = state.hands.length > 0 || state.imports.length > 0 || state.bankrollSessions.length > 0 || state.bankrollTransactions.length > 0;
+  const workspaceReady = !auth.enabled || auth.isSignedIn() || state.demoMode;
+
+  return [
+    {
+      title: state.demoMode ? "Explore demo workspace" : auth.enabled ? "Open a saved workspace" : "Use local workspace",
+      body: state.demoMode
+        ? "Demo changes are temporary, but the workflow matches the real workspace."
+        : workspaceReady
+          ? workspaceModeMeta().saveTarget
+          : "Sign in so sessions, hands, and notes stay attached to your account.",
+      done: workspaceReady,
+      actionLabel: workspaceReady ? "Ready" : "Sign In",
+      actionAttrs: workspaceReady ? "" : "data-start-tracking"
+    },
+    {
+      title: "Log a bankroll session",
+      body: state.bankrollSessions.length
+        ? `${state.bankrollSessions.length} session${state.bankrollSessions.length === 1 ? "" : "s"} saved.`
+        : "Add date, location, stakes, hours, buy-in, and cash-out.",
+      done: state.bankrollSessions.length > 0,
+      actionLabel: state.bankrollSessions.length ? "View Sessions" : "Add Session",
+      actionAttrs: 'data-jump-view="sessions"'
+    },
+    {
+      title: "Capture hands",
+      body: state.hands.length
+        ? `${state.hands.length} hand${state.hands.length === 1 ? "" : "s"} saved from live entry or import.`
+        : "Build a live hand after a session, or paste online hand-history text.",
+      done: state.hands.length > 0,
+      actionLabel: state.hands.length ? "View Hands" : "Build Hand",
+      actionAttrs: `data-jump-view="${state.hands.length ? "hands" : "live"}"`
+    },
+    {
+      title: "Connect hands to sessions",
+      body: linkedHands
+        ? `${linkedHands} captured hand${linkedHands === 1 ? "" : "s"} linked to bankroll sessions.`
+        : "Link hands so review work belongs to the session where it happened.",
+      done: linkedHands > 0,
+      actionLabel: linkedHands ? "Review Links" : "Link Hands",
+      actionAttrs: 'data-jump-view="sessions"'
+    },
+    {
+      title: "Start reviewing",
+      body: reviewWork
+        ? `${reviewWork} saved review note${reviewWork === 1 ? "" : "s"} or decision checklist entries.`
+        : "Mark important hands, tag themes, and write short decision notes.",
+      done: reviewWork > 0,
+      actionLabel: reviewWork ? "Open Review" : "Start Review",
+      actionAttrs: 'data-jump-view="review"'
+    },
+    {
+      title: "Keep a backup",
+      body: state.backupExported
+        ? "A workspace backup was exported from this browser."
+        : hasData
+          ? "Download a JSON backup after meaningful imports or session logs."
+          : "A backup becomes useful once the workspace has sessions or hands.",
+      done: state.backupExported,
+      actionLabel: hasData ? "Backup JSON" : "Add Data First",
+      actionAttrs: hasData ? "data-export-workspace-json" : 'data-jump-view="sessions"'
+    }
+  ];
+}
+
+function renderOnboardingPanel() {
+  if (!elements.onboardingPanel) {
+    return;
+  }
+
+  if (state.showLanding || state.sharedReview) {
+    elements.onboardingPanel.hidden = true;
+    elements.onboardingPanel.innerHTML = "";
+    return;
+  }
+
+  const steps = workspaceSetupSteps();
+  const doneCount = steps.filter((step) => step.done).length;
+  const hasActivity = state.hands.length > 0 || state.imports.length > 0 || state.bankrollSessions.length > 0 || state.bankrollTransactions.length > 0;
+  const allDone = doneCount === steps.length;
+
+  if (state.onboardingDismissed && hasActivity && !state.workspaceError) {
+    elements.onboardingPanel.hidden = true;
+    elements.onboardingPanel.innerHTML = "";
+    return;
+  }
+
+  const nextIndex = steps.findIndex((step) => !step.done);
+  const activeIndex = nextIndex === -1 ? steps.length - 1 : nextIndex;
+  const progress = Math.round((doneCount / steps.length) * 100);
+
+  elements.onboardingPanel.hidden = false;
+  elements.onboardingPanel.innerHTML = `
+    <div class="onboarding-head">
+      <div>
+        <p class="eyebrow">Getting Started</p>
+        <h3>${allDone ? "Workspace foundation is set" : "Build a useful poker workspace"}</h3>
+        <p>${allDone
+          ? "You have the core loop in place: sessions, captured hands, linked review work, and backup habit."
+          : "Follow this order to make the app useful with real poker data instead of scattered notes."}</p>
+      </div>
+      <div class="onboarding-progress">
+        <strong>${doneCount}/${steps.length}</strong>
+        <span>setup steps</span>
+        <div class="progress-track"><span style="width: ${progress}%"></span></div>
+      </div>
+    </div>
+    <div class="onboarding-steps">
+      ${steps.map((step, index) => {
+        const status = step.done ? "Done" : index === activeIndex ? "Next" : "Later";
+        const statusClass = step.done ? "done" : index === activeIndex ? "next" : "later";
+        return `
+          <article class="onboarding-step ${statusClass}">
+            <span class="onboarding-index">${step.done ? "OK" : index + 1}</span>
+            <div>
+              <strong>${escapeHtml(step.title)}</strong>
+              <p>${escapeHtml(step.body)}</p>
+            </div>
+            <span class="status ${step.done ? "ready" : index === activeIndex ? "queued" : ""}">${escapeHtml(status)}</span>
+            ${step.actionAttrs ? `<button class="button secondary" type="button" ${step.actionAttrs}>${escapeHtml(step.actionLabel)}</button>` : ""}
+          </article>
+        `;
+      }).join("")}
+    </div>
+    <div class="onboarding-actions">
+      <button class="button" type="button" data-jump-view="sessions">Add Session</button>
+      <button class="button secondary" type="button" data-jump-view="live">Build Live Hand</button>
+      <button class="button secondary" type="button" data-jump-view="imports">Import Hands</button>
+      <button class="button ghost" type="button" data-dismiss-onboarding>${allDone ? "Close" : "Hide Guide"}</button>
+    </div>
   `;
 }
 
@@ -5914,6 +6159,8 @@ function render() {
   renderHomePeriodControls();
   renderMetrics();
   renderWorkspaceHealth();
+  renderWorkspaceAlert();
+  renderOnboardingPanel();
   renderPlayerOptions();
   renderSessionOptions();
   renderLiveSessionOptions();
@@ -5946,6 +6193,7 @@ function render() {
 
 async function refresh({ quiet = false } = {}) {
   if (state.demoMode) {
+    state.workspaceError = null;
     render();
     if (!quiet) {
       showToast("Demo mode is already loaded.");
@@ -5957,6 +6205,30 @@ async function refresh({ quiet = false } = {}) {
     clearDashboardData();
     render();
     return;
+  }
+
+  let payloads;
+  try {
+    payloads = await Promise.all([
+      api("/api/hands?limit=500"),
+      api("/api/imports"),
+      api("/api/stats/summary"),
+      api("/api/leaks"),
+      api(reviewQueuePath()),
+      api("/api/study/tags"),
+      api("/api/study/plan"),
+      api("/api/bankroll/sessions"),
+      api("/api/bankroll/summary"),
+      api("/api/bankroll/transactions"),
+      api("/api/bankroll/transactions/summary")
+    ]);
+  } catch (error) {
+    state.workspaceError = friendlyApiError(error);
+    render();
+    if (!quiet) {
+      showToast(state.workspaceError.title);
+    }
+    throw error;
   }
 
   const [
@@ -5971,19 +6243,7 @@ async function refresh({ quiet = false } = {}) {
     bankrollSummaryPayload,
     bankrollTransactionsPayload,
     bankrollTransactionSummaryPayload
-  ] = await Promise.all([
-    api("/api/hands?limit=500"),
-    api("/api/imports"),
-    api("/api/stats/summary"),
-    api("/api/leaks"),
-    api(reviewQueuePath()),
-    api("/api/study/tags"),
-    api("/api/study/plan"),
-    api("/api/bankroll/sessions"),
-    api("/api/bankroll/summary"),
-    api("/api/bankroll/transactions"),
-    api("/api/bankroll/transactions/summary")
-  ]);
+  ] = payloads;
 
   state.hands = handsPayload.hands;
   state.imports = importsPayload.imports;
@@ -5996,6 +6256,7 @@ async function refresh({ quiet = false } = {}) {
   state.bankrollSummary = bankrollSummaryPayload.summary;
   state.bankrollTransactions = bankrollTransactionsPayload.transactions;
   state.bankrollTransactionSummary = bankrollTransactionSummaryPayload.summary;
+  state.workspaceError = null;
   state.lastSyncedAt = new Date().toISOString();
 
   if (state.selectedHandId && !state.hands.some((hand) => hand.id === state.selectedHandId)) {
@@ -6432,6 +6693,40 @@ document.addEventListener("click", (event) => {
   if (copySharedLinkTarget) {
     event.preventDefault();
     copyText(window.location.href).then(() => showToast("Shared review link copied.")).catch((error) => showToast(error.message));
+    return;
+  }
+
+  const retryRefreshTarget = event.target.closest("[data-retry-refresh]");
+  if (retryRefreshTarget) {
+    event.preventDefault();
+    refresh()
+      .then(() => showToast("Workspace refreshed."))
+      .catch((error) => showToast(error.message));
+    return;
+  }
+
+  const clearAlertTarget = event.target.closest("[data-clear-workspace-alert]");
+  if (clearAlertTarget) {
+    event.preventDefault();
+    state.workspaceError = null;
+    renderWorkspaceAlert();
+    return;
+  }
+
+  const dismissOnboardingTarget = event.target.closest("[data-dismiss-onboarding]");
+  if (dismissOnboardingTarget) {
+    event.preventDefault();
+    state.onboardingDismissed = true;
+    writeStorageFlag(onboardingPanelStorageKey, true);
+    renderOnboardingPanel();
+    showToast("Setup guide hidden.");
+    return;
+  }
+
+  const exportWorkspaceTarget = event.target.closest("[data-export-workspace-json]");
+  if (exportWorkspaceTarget) {
+    event.preventDefault();
+    exportWorkspaceJson().catch((error) => showToast(error.message));
     return;
   }
 
