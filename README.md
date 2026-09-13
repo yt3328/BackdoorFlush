@@ -4,7 +4,7 @@ Backdoor Flush is a small hand-history desk for reviewing poker sessions.
 
 The local app lets you upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, track bankroll sessions, and run quick equity checks.
 
-Version 2.6 adds first-run onboarding, clearer workspace status/actions, retryable API error guidance, and backup habit tracking for real users.
+Version 2.7 adds a Settings/Data Center view, user defaults for bankroll tracking, preview-first session imports, currency-aware money display, and clearer sync/backup confidence signals.
 
 ## Run it
 
@@ -32,11 +32,14 @@ Local mode:
 - Shows VPIP, PFR, 3-bet rate, aggression factor, captured hero-position coverage, and compact charts.
 - Tracks poker sessions with location, stakes, hours, buy-ins, cash-outs, results, hourly rate, and bb/hr.
 - Imports previous cash-game and tournament session exports into the bankroll tracker.
-- Previews bankroll exports before import, including new sessions, ledger transactions, duplicates, and skipped rows.
+- Previews bankroll exports before import, including new sessions, ledger transactions, duplicates, skipped rows, and applied defaults.
+- Requires a fresh preview before saving changed session-import text.
 - Tracks bankroll transactions separately from poker-session results.
 - Shows bankroll progress, location-level session charts, and common Home periods such as 7D, 30D, 90D, YTD, and All.
 - Keeps Home and Sessions filters synchronized across date range, location, game type, stakes, and linked-hand review status.
 - Shows a workspace health strip for save mode, last activity, ready/queued/failed imports, linked hands, and review coverage.
+- Opens a Settings/Data Center view for save mode, sync status, API target, record counts, backup status, and tracking defaults.
+- Saves preferred currency, bankroll name, default location, default stakes, default game type, table size, big blind, and graph focus in the browser.
 - Labels demo data as temporary, local data as saved on the computer, and cloud data as saved to the signed-in account.
 - Links imports to bankroll sessions when uploading, from the import log, or through the sample loader.
 - Saves live-entered hands from a structured builder with seats, cards, actions, winners, and session links.

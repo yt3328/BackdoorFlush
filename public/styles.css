@@ -3806,6 +3806,72 @@ button.tag-chip.active,
   z-index: 1;
 }
 
+.data-center-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.data-center-grid article,
+.settings-summary,
+.import-confidence {
+  border: 1px solid rgba(33, 41, 35, 0.12);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #fffefb, #f6f2e8);
+  padding: 14px;
+}
+
+.data-center-grid article {
+  display: grid;
+  gap: 6px;
+  min-height: 132px;
+}
+
+.data-center-grid span,
+.import-confidence span {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.data-center-grid strong {
+  font-size: 1.25rem;
+}
+
+.data-center-grid p,
+.settings-summary p,
+.import-confidence p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.settings-summary {
+  margin-top: 14px;
+}
+
+.settings-summary p + p {
+  margin-top: 5px;
+}
+
+.settings-form .form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.import-confidence {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.import-confidence strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
 .onboarding-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(180px, 0.24fr);
@@ -4009,6 +4075,7 @@ button.tag-chip.active,
   .session-hand-filters,
   .session-drilldown-grid,
   .table-setup-grid,
+  .data-center-grid,
   .live-action-compose,
   .live-preview-stats {
     grid-template-columns: 1fr;
@@ -4140,6 +4207,7 @@ button.tag-chip.active,
   .workspace-health-actions,
   .workspace-alert-actions,
   .onboarding-actions,
+  .import-confidence,
   .session-export-actions,
   .session-detail-actions,
   .session-share-actions,
@@ -4159,6 +4227,7 @@ button.tag-chip.active,
   .workspace-health-actions .button,
   .workspace-alert-actions .button,
   .onboarding-actions .button,
+  .import-confidence span,
   .session-export-actions .button,
   .session-share-actions .button,
   .shared-review-actions .button,
@@ -4172,6 +4241,7 @@ button.tag-chip.active,
   .detail-summary,
   .review-context-strip,
   .form-grid,
+  .settings-form .form-grid,
   .session-kpis,
   .audit-list,
   .library-summary,

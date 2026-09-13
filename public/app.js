@@ -1,6 +1,6 @@
 import { createAuthClient } from "./auth.js";
 
-const appVersion = "2.6.0";
+const appVersion = "2.7.0";
 const shareHashPrefix = "#review-share=";
 const positionOrder = ["BTN", "CO", "HJ", "LJ", "MP", "UTG+1", "UTG", "STR", "SB", "BB", "Unknown"];
 const streetOrder = ["hole-cards", "flop", "turn", "river", "show-down"];
@@ -19,6 +19,7 @@ const viewTitles = {
   live: "Live Hand",
   equity: "Equity",
   imports: "Imports",
+  settings: "Settings",
   shared: "Shared Review"
 };
 const homePeriodOptions = [
@@ -47,6 +48,34 @@ const suggestedReviewTags = [
 const onboardingStorageKey = "backdoor-flush.onboarding-entered";
 const onboardingPanelStorageKey = "backdoor-flush.onboarding-panel-dismissed";
 const backupExportStorageKey = "backdoor-flush.backup-exported";
+const backupExportedAtStorageKey = "backdoor-flush.backup-exported-at";
+const settingsStorageKey = "backdoor-flush.settings.v1";
+const defaultSettings = {
+  currency: "USD",
+  bankrollName: "Default",
+  defaultLocation: "PokerStars",
+  defaultStakes: "$0.05/$0.10",
+  defaultGameType: "cash",
+  defaultTableSize: "6",
+  defaultBigBlind: "0.10",
+  graphMetric: "profit"
+};
+const currencyOptions = [
+  { value: "USD", label: "USD - US Dollar" },
+  { value: "CAD", label: "CAD - Canadian Dollar" },
+  { value: "EUR", label: "EUR - Euro" },
+  { value: "GBP", label: "GBP - British Pound" },
+  { value: "CNY", label: "CNY - Chinese Yuan" }
+];
+const gameTypeOptions = [
+  { value: "cash", label: "Cash" },
+  { value: "tournament", label: "Tournament" },
+  { value: "home-game", label: "Home game" }
+];
+const graphMetricOptions = [
+  { value: "profit", label: "Session profit" },
+  { value: "bb", label: "Big blinds won" }
+];
 const liveTableSizes = [2, 3, 4, 5, 6, 7, 8, 9, 10];
 const livePositionOptions = ["BTN", "SB", "BB", "STR", "UTG", "UTG+1", "MP", "MP+1", "LJ", "HJ", "CO"];
 const liveDefaultPositions = {
@@ -163,10 +192,13 @@ const state = {
   bankrollTransactions: [],
   bankrollTransactionSummary: emptyTransactionSummary,
   bankrollImportPreview: null,
+  bankrollImportPreviewKey: "",
   workspaceRestorePreview: null,
   workspaceError: null,
+  settings: readAppSettings(),
   onboardingDismissed: readStorageFlag(onboardingPanelStorageKey),
   backupExported: readStorageFlag(backupExportStorageKey),
+  backupExportedAt: readStorageValue(backupExportedAtStorageKey),
   sharedReview: null,
   sessionShareOptions: {
     hideAmounts: true,
@@ -306,6 +338,10 @@ const elements = {
   exportSessionsCsv: document.querySelector("#export-sessions-csv"),
   exportTransactionsCsv: document.querySelector("#export-transactions-csv"),
   exportWorkspaceJson: document.querySelector("#export-workspace-json"),
+  settingsDataCenter: document.querySelector("#settings-data-center"),
+  settingsSummary: document.querySelector("#settings-summary"),
+  settingsForm: document.querySelector("#settings-form"),
+  settingsReset: document.querySelector("#settings-reset"),
   importList: document.querySelector("#import-list"),
   importForm: document.querySelector("#import-form"),
   importSession: document.querySelector("#import-session"),
@@ -354,6 +390,14 @@ function readStorageFlag(key) {
   }
 }
 
+function readStorageValue(key) {
+  try {
+    return window.localStorage.getItem(key) ?? "";
+  } catch {
+    return "";
+  }
+}
+
 function writeStorageFlag(key, value) {
   try {
     if (value) {
@@ -361,6 +405,57 @@ function writeStorageFlag(key, value) {
     } else {
       window.localStorage.removeItem(key);
     }
+  } catch {
+    // Local storage can be unavailable in strict browser privacy modes.
+  }
+}
+
+function writeStorageValue(key, value) {
+  try {
+    if (value) {
+      window.localStorage.setItem(key, value);
+    } else {
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    // Local storage can be unavailable in strict browser privacy modes.
+  }
+}
+
+function cleanSettingText(value, fallback = "") {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function normalizeAppSettings(settings = {}) {
+  const currencyValues = new Set(currencyOptions.map((option) => option.value));
+  const gameValues = new Set(gameTypeOptions.map((option) => option.value));
+  const graphValues = new Set(graphMetricOptions.map((option) => option.value));
+
+  return {
+    currency: currencyValues.has(settings.currency) ? settings.currency : defaultSettings.currency,
+    bankrollName: cleanSettingText(settings.bankrollName, defaultSettings.bankrollName),
+    defaultLocation: cleanSettingText(settings.defaultLocation, defaultSettings.defaultLocation),
+    defaultStakes: cleanSettingText(settings.defaultStakes, defaultSettings.defaultStakes),
+    defaultGameType: gameValues.has(settings.defaultGameType) ? settings.defaultGameType : defaultSettings.defaultGameType,
+    defaultTableSize: cleanSettingText(settings.defaultTableSize, defaultSettings.defaultTableSize),
+    defaultBigBlind: cleanSettingText(settings.defaultBigBlind, defaultSettings.defaultBigBlind),
+    graphMetric: graphValues.has(settings.graphMetric) ? settings.graphMetric : defaultSettings.graphMetric
+  };
+}
+
+function readAppSettings() {
+  try {
+    const raw = window.localStorage.getItem(settingsStorageKey);
+    return normalizeAppSettings(raw ? JSON.parse(raw) : {});
+  } catch {
+    return { ...defaultSettings };
+  }
+}
+
+function writeAppSettings(settings) {
+  try {
+    window.localStorage.setItem(settingsStorageKey, JSON.stringify(normalizeAppSettings(settings)));
   } catch {
     // Local storage can be unavailable in strict browser privacy modes.
   }
@@ -517,6 +612,7 @@ function markWorkspaceSaved(message = "Workspace updated") {
   renderWorkspaceHealth();
   renderWorkspaceAlert();
   renderOnboardingPanel();
+  renderSettings();
 
   return `${message}. ${workspaceModeMeta().saveToast}`;
 }
@@ -529,6 +625,7 @@ function clearDashboardData() {
   state.bankrollTransactions = [];
   state.bankrollTransactionSummary = emptyTransactionSummary;
   state.bankrollImportPreview = null;
+  state.bankrollImportPreviewKey = "";
   state.workspaceRestorePreview = null;
   state.workspaceError = null;
   state.bankrollFilters = { ...emptyBankrollFilters };
@@ -1449,7 +1546,7 @@ function formatCurrency(value, { compact = false, signed = false } = {}) {
   const prefix = signed && number > 0 ? "+" : "";
   const formatter = new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "USD",
+    currency: state.settings?.currency ?? defaultSettings.currency,
     maximumFractionDigits: compact || Math.abs(number) >= 100 ? 0 : 2
   });
 
@@ -2297,6 +2394,7 @@ function clientWorkspaceBackup() {
       sessionDetail: { ...state.sessionDetailFilters },
       review: { ...state.reviewFilters }
     },
+    settings: { ...state.settings },
     summaries: {
       bankroll: state.bankrollSummary,
       visibleBankroll: currentBankrollSummary(),
@@ -2317,7 +2415,11 @@ async function workspaceBackupPayload() {
     return clientWorkspaceBackup();
   }
 
-  return api("/api/export/workspace");
+  const payload = await api("/api/export/workspace");
+  return {
+    ...payload,
+    settings: { ...state.settings }
+  };
 }
 
 function exportSessionsCsv() {
@@ -2368,8 +2470,12 @@ async function exportWorkspaceJson() {
     mimeType: "application/json;charset=utf-8"
   });
   state.backupExported = true;
+  state.backupExportedAt = new Date().toISOString();
   writeStorageFlag(backupExportStorageKey, true);
+  writeStorageValue(backupExportedAtStorageKey, state.backupExportedAt);
+  renderWorkspaceHealth();
   renderOnboardingPanel();
+  renderSettings();
   showToast("Workspace backup exported.");
 }
 
@@ -2878,7 +2984,13 @@ function renderSparkline(points) {
       });
   }
 
-  const values = points.map((point) => point.cumulativeProfit);
+  const graphMetric = state.settings.graphMetric === "bb" ? "bb" : "profit";
+  const pointValue = (point) => graphMetric === "bb" ? point.cumulativeBb : point.cumulativeProfit;
+  const sessionValue = (point) => graphMetric === "bb" ? point.bbWon : point.profit;
+  const formatChartValue = (value, options = {}) => graphMetric === "bb"
+    ? `${options.signed && Number(value) > 0 ? "+" : ""}${formatNumber(value, 1)} bb`
+    : formatCurrency(value, options);
+  const values = points.map(pointValue);
   const rawMin = Math.min(0, ...values);
   const rawMax = Math.max(0, ...values);
   const rawSpan = Math.max(1, rawMax - rawMin);
@@ -2898,7 +3010,7 @@ function renderSparkline(points) {
   const valueToY = (value) => padding.top + plotHeight - ((value - min) / span) * plotHeight;
   const coordinates = points.map((point, index) => {
     const x = padding.left + (points.length === 1 ? plotWidth / 2 : (index / (points.length - 1)) * plotWidth);
-    const y = valueToY(point.cumulativeProfit);
+    const y = valueToY(pointValue(point));
     return {
       x,
       y,
@@ -2930,7 +3042,7 @@ function renderSparkline(points) {
         const y = valueToY(value);
         return `
           <line class="chart-grid-line" x1="${padding.left}" y1="${y.toFixed(1)}" x2="${width - padding.right}" y2="${y.toFixed(1)}"></line>
-          <text class="chart-axis-label" x="${padding.left - 12}" y="${(y + 4).toFixed(1)}" text-anchor="end">${formatCurrency(value, { compact: true })}</text>
+          <text class="chart-axis-label" x="${padding.left - 12}" y="${(y + 4).toFixed(1)}" text-anchor="end">${escapeHtml(formatChartValue(value, { compact: true }))}</text>
         `;
       }).join("")}
       <line class="zero-line" x1="${padding.left}" y1="${zeroY.toFixed(1)}" x2="${width - padding.right}" y2="${zeroY.toFixed(1)}"></line>
@@ -2938,14 +3050,14 @@ function renderSparkline(points) {
       <path class="bankroll-line" d="${linePath}"></path>
       ${coordinates
         .map(({ x, y, point }, index) => {
-          const title = `${point.date} / ${point.label || "Session"} / ${formatCurrency(point.profit, { signed: true })} session / ${formatCurrency(point.cumulativeProfit, { signed: true })} running`;
+          const title = `${point.date} / ${point.label || "Session"} / ${formatChartValue(sessionValue(point), { signed: true })} session / ${formatChartValue(pointValue(point), { signed: true })} running`;
           return `
             <circle class="bankroll-hit-point" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="8">
               <title>${escapeHtml(title)}</title>
             </circle>
             ${visibleMarkerIndexes.has(index)
               ? `<circle class="bankroll-point ${point.profit >= 0 ? "win" : "loss"}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${points.length === 1 ? 5 : 3.8}">
-              <title>${escapeHtml(point.date)} ${formatCurrency(point.cumulativeProfit, { signed: true })}</title>
+              <title>${escapeHtml(point.date)} ${escapeHtml(formatChartValue(pointValue(point), { signed: true }))}</title>
             </circle>`
               : ""}
           `;
@@ -2956,7 +3068,7 @@ function renderSparkline(points) {
     </svg>
     <div class="chart-axis">
       <span>${escapeHtml(formatDate(points[0].date))}</span>
-      <strong>${formatCurrency(points.at(-1).cumulativeProfit, { signed: true })}</strong>
+      <strong>${escapeHtml(formatChartValue(pointValue(points.at(-1)), { signed: true }))}</strong>
       <span>${escapeHtml(formatDate(points.at(-1).date))}</span>
     </div>
   `;
@@ -3104,6 +3216,7 @@ function renderWorkspaceHealth() {
       <button class="button secondary" type="button" data-jump-view="sessions">Log Session</button>
       <button class="button secondary" type="button" data-jump-view="live">Build Hand</button>
       <button class="button secondary" type="button" data-jump-view="imports">Import</button>
+      <button class="button ghost" type="button" data-jump-view="settings">Settings</button>
       <button class="button ghost" type="button" data-export-workspace-json ${hasRecords ? "" : "disabled"}>Backup</button>
     `;
 
@@ -3314,6 +3427,103 @@ function renderOnboardingPanel() {
       <button class="button secondary" type="button" data-jump-view="imports">Import Hands</button>
       <button class="button ghost" type="button" data-dismiss-onboarding>${allDone ? "Close" : "Hide Guide"}</button>
     </div>
+  `;
+}
+
+function workspaceRecordCount() {
+  return state.hands.length +
+    state.imports.length +
+    state.bankrollSessions.length +
+    state.bankrollTransactions.length;
+}
+
+function renderOptionList(options, current) {
+  return options.map((option) => (
+    `<option value="${escapeHtml(option.value)}" ${selectedOption(current, option.value)}>${escapeHtml(option.label)}</option>`
+  )).join("");
+}
+
+function settingsFormValues() {
+  return {
+    currency: elements.settingsForm.elements.currency.value,
+    bankrollName: elements.settingsForm.elements.bankrollName.value,
+    defaultLocation: elements.settingsForm.elements.defaultLocation.value,
+    defaultStakes: elements.settingsForm.elements.defaultStakes.value,
+    defaultGameType: elements.settingsForm.elements.defaultGameType.value,
+    defaultTableSize: elements.settingsForm.elements.defaultTableSize.value,
+    defaultBigBlind: elements.settingsForm.elements.defaultBigBlind.value,
+    graphMetric: elements.settingsForm.elements.graphMetric.value
+  };
+}
+
+function renderSettings() {
+  if (!elements.settingsForm || !elements.settingsDataCenter) {
+    return;
+  }
+
+  const mode = workspaceModeMeta();
+  const settings = state.settings;
+  const recordCount = workspaceRecordCount();
+  const linkedHands = state.hands.filter((hand) => hand.sessionId).length;
+  const openReviews = state.hands.filter((hand) => !hand.reviewedAt).length;
+  const apiLabel = (() => {
+    try {
+      return apiBase ? new URL(apiBase, window.location.origin).hostname : "local server";
+    } catch {
+      return apiBase || "local server";
+    }
+  })();
+  const backupLabel = state.backupExportedAt
+    ? formatTimestamp(state.backupExportedAt)
+    : state.backupExported
+      ? "Exported from this browser"
+      : "No backup exported yet";
+
+  elements.settingsDataCenter.innerHTML = `
+    <article>
+      <span>Save mode</span>
+      <strong>${escapeHtml(mode.badge)}</strong>
+      <p>${escapeHtml(mode.detail)}</p>
+    </article>
+    <article>
+      <span>Last sync</span>
+      <strong>${escapeHtml(formatTimestamp(state.lastSyncedAt))}</strong>
+      <p>${escapeHtml(state.lastSaveMessage || mode.saveTarget)}</p>
+    </article>
+    <article>
+      <span>Backup</span>
+      <strong>${escapeHtml(backupLabel)}</strong>
+      <p>${recordCount > 0 ? "Export after meaningful changes." : "Add sessions or hands before backing up."}</p>
+    </article>
+    <article>
+      <span>Records</span>
+      <strong>${recordCount}</strong>
+      <p>${state.bankrollSessions.length} sessions / ${state.hands.length} hands / ${state.bankrollTransactions.length} transactions</p>
+    </article>
+    <article>
+      <span>Review coverage</span>
+      <strong>${linkedHands}/${state.hands.length}</strong>
+      <p>${openReviews} open review${openReviews === 1 ? "" : "s"} in the captured sample.</p>
+    </article>
+    <article>
+      <span>API</span>
+      <strong>${escapeHtml(apiLabel)}</strong>
+      <p>${state.workspaceError ? "Last request needs attention." : "Ready for refresh and save actions."}</p>
+    </article>
+  `;
+
+  elements.settingsForm.elements.currency.innerHTML = renderOptionList(currencyOptions, settings.currency);
+  elements.settingsForm.elements.defaultGameType.innerHTML = renderOptionList(gameTypeOptions, settings.defaultGameType);
+  elements.settingsForm.elements.graphMetric.innerHTML = renderOptionList(graphMetricOptions, settings.graphMetric);
+  elements.settingsForm.elements.bankrollName.value = settings.bankrollName;
+  elements.settingsForm.elements.defaultLocation.value = settings.defaultLocation;
+  elements.settingsForm.elements.defaultStakes.value = settings.defaultStakes;
+  elements.settingsForm.elements.defaultTableSize.value = settings.defaultTableSize;
+  elements.settingsForm.elements.defaultBigBlind.value = settings.defaultBigBlind;
+
+  elements.settingsSummary.innerHTML = `
+    <p><strong>Current defaults:</strong> ${escapeHtml(settings.bankrollName)} / ${escapeHtml(settings.defaultLocation)} / ${escapeHtml(settings.defaultStakes)} / ${escapeHtml(settings.currency)}.</p>
+    <p class="muted-line">New bankroll sessions and imported rows with missing location or stakes will use these defaults.</p>
   `;
 }
 
@@ -4812,24 +5022,35 @@ function renderBankrollImportPreview(payload = state.bankrollImportPreview) {
   const sessions = payload.sessions ?? [];
   const transactions = payload.transactions ?? [];
   const skippedRows = payload.skippedRows ?? [];
+  const readySessions = payload.readySessionCount ?? sessions.length;
+  const readyTransactions = payload.readyTransactionCount ?? transactions.length;
+  const duplicateCount = payload.duplicateCount ?? 0;
+  const skippedCount = payload.skippedCount ?? 0;
 
   elements.bankrollImportPreview.innerHTML = `
+    <div class="import-confidence">
+      <div>
+        <strong>Review before saving</strong>
+        <p>${readySessions + readyTransactions} record${readySessions + readyTransactions === 1 ? "" : "s"} ready. Duplicates and skipped rows will not be added.</p>
+      </div>
+      <span>${escapeHtml(state.settings.bankrollName)} / ${escapeHtml(state.settings.defaultLocation)} / ${escapeHtml(state.settings.defaultStakes)}</span>
+    </div>
     <div class="import-preview-grid">
       <div>
         <span class="subtle">Sessions ready</span>
-        <strong>${payload.readySessionCount ?? sessions.length}</strong>
+        <strong>${readySessions}</strong>
       </div>
       <div>
         <span class="subtle">Transactions ready</span>
-        <strong>${payload.readyTransactionCount ?? transactions.length}</strong>
+        <strong>${readyTransactions}</strong>
       </div>
       <div>
         <span class="subtle">Duplicates</span>
-        <strong>${payload.duplicateCount ?? 0}</strong>
+        <strong>${duplicateCount}</strong>
       </div>
       <div>
         <span class="subtle">Skipped rows</span>
-        <strong>${payload.skippedCount ?? 0}</strong>
+        <strong>${skippedCount}</strong>
       </div>
     </div>
     <div class="preview-lists">
@@ -5016,14 +5237,15 @@ function renderTransactions() {
 function resetBankrollForm() {
   elements.bankrollForm.reset();
   elements.bankrollForm.elements.date.value = new Date().toISOString().slice(0, 10);
-  elements.bankrollForm.elements.location.value = "PokerStars";
-  elements.bankrollForm.elements.gameType.value = "cash";
-  elements.bankrollForm.elements.stakes.value = "$0.05/$0.10";
-  elements.bankrollForm.elements.tableSize.value = "6";
+  elements.bankrollForm.elements.location.value = state.settings.defaultLocation;
+  elements.bankrollForm.elements.gameType.value = state.settings.defaultGameType;
+  elements.bankrollForm.elements.bankrollName.value = state.settings.bankrollName;
+  elements.bankrollForm.elements.stakes.value = state.settings.defaultStakes;
+  elements.bankrollForm.elements.tableSize.value = state.settings.defaultTableSize;
   elements.bankrollForm.elements.hours.value = "2.5";
   elements.bankrollForm.elements.buyIn.value = "50";
   elements.bankrollForm.elements.cashOut.value = "64";
-  elements.bankrollForm.elements.bigBlind.value = "0.10";
+  elements.bankrollForm.elements.bigBlind.value = state.settings.defaultBigBlind;
   elements.bankrollForm.dataset.editingSessionId = "";
   elements.bankrollFormTitle.textContent = "New Session";
   elements.bankrollSubmit.textContent = "Add Session";
@@ -5034,7 +5256,7 @@ function resetTransactionForm() {
   elements.transactionForm.reset();
   elements.transactionForm.elements.date.value = new Date().toISOString().slice(0, 10);
   elements.transactionForm.elements.type.value = "deposit";
-  elements.transactionForm.elements.bankrollName.value = "Default";
+  elements.transactionForm.elements.bankrollName.value = state.settings.bankrollName;
   elements.transactionForm.dataset.editingTransactionId = "";
   elements.transactionFormTitle.textContent = "Bankroll Transactions";
   elements.transactionSubmit.textContent = "Add Transaction";
@@ -5045,7 +5267,7 @@ function fillTransactionForm(transaction) {
   elements.transactionForm.elements.date.value = transaction.date ?? "";
   elements.transactionForm.elements.type.value = transaction.type ?? "adjustment";
   elements.transactionForm.elements.amount.value = transaction.amount ?? "";
-  elements.transactionForm.elements.bankrollName.value = transaction.bankrollName ?? "Default";
+  elements.transactionForm.elements.bankrollName.value = transaction.bankrollName ?? state.settings.bankrollName;
   elements.transactionForm.elements.note.value = transaction.note ?? "";
   elements.transactionForm.dataset.editingTransactionId = transactionId(transaction);
   elements.transactionFormTitle.textContent = "Edit Transaction";
@@ -5057,6 +5279,7 @@ function fillBankrollForm(session) {
   elements.bankrollForm.elements.date.value = session.date ?? "";
   elements.bankrollForm.elements.location.value = session.location ?? "";
   elements.bankrollForm.elements.gameType.value = session.gameType ?? "cash";
+  elements.bankrollForm.elements.bankrollName.value = session.bankrollName ?? state.settings.bankrollName;
   elements.bankrollForm.elements.stakes.value = session.stakes ?? "";
   elements.bankrollForm.elements.tableSize.value = session.tableSize ?? "";
   elements.bankrollForm.elements.hours.value = session.hours ?? "";
@@ -6161,6 +6384,7 @@ function render() {
   renderWorkspaceHealth();
   renderWorkspaceAlert();
   renderOnboardingPanel();
+  renderSettings();
   renderPlayerOptions();
   renderSessionOptions();
   renderLiveSessionOptions();
@@ -6452,6 +6676,11 @@ function readSelectedFile(file) {
   });
 }
 
+function textFingerprint(value) {
+  const text = String(value ?? "");
+  return `${text.length}:${text.slice(0, 80)}:${text.slice(-80)}`;
+}
+
 function countLabel(count, label) {
   return `${count} ${label}${count === 1 ? "" : "s"}`;
 }
@@ -6493,6 +6722,19 @@ function bankrollPreviewSummary(payload) {
   }
 
   return parts.join(" / ");
+}
+
+async function previewBankrollImportText(rawText) {
+  return api("/api/bankroll/imports/preview", {
+    method: "POST",
+    body: {
+      rawText,
+      source: "bankroll-csv",
+      bankrollName: state.settings.bankrollName,
+      defaultLocation: state.settings.defaultLocation,
+      defaultStakes: state.settings.defaultStakes
+    }
+  });
 }
 
 function workspaceRestoreSummary(payload, verb = "ready") {
@@ -6727,6 +6969,15 @@ document.addEventListener("click", (event) => {
   if (exportWorkspaceTarget) {
     event.preventDefault();
     exportWorkspaceJson().catch((error) => showToast(error.message));
+    return;
+  }
+
+  const refreshWorkspaceTarget = event.target.closest("[data-refresh-workspace]");
+  if (refreshWorkspaceTarget) {
+    event.preventDefault();
+    refresh()
+      .then(() => showToast("Workspace synced."))
+      .catch((error) => showToast(error.message));
     return;
   }
 
@@ -7244,6 +7495,7 @@ elements.bankrollImportFile.addEventListener("change", async (event) => {
     const rawText = await readSelectedFile(file);
     elements.bankrollImportForm.elements.rawText.value = rawText;
     state.bankrollImportPreview = null;
+    state.bankrollImportPreviewKey = "";
     renderBankrollImportPreview();
     elements.bankrollImportStatus.textContent = `${file.name} loaded.`;
   } catch (error) {
@@ -7256,7 +7508,21 @@ elements.clearBankrollImport.addEventListener("click", () => {
   elements.bankrollImportFile.value = "";
   elements.bankrollImportStatus.textContent = "";
   state.bankrollImportPreview = null;
+  state.bankrollImportPreviewKey = "";
   renderBankrollImportPreview();
+});
+
+elements.bankrollImportForm.elements.rawText.addEventListener("input", () => {
+  if (!state.bankrollImportPreviewKey) {
+    return;
+  }
+
+  if (state.bankrollImportPreviewKey !== textFingerprint(elements.bankrollImportForm.elements.rawText.value)) {
+    state.bankrollImportPreview = null;
+    state.bankrollImportPreviewKey = "";
+    renderBankrollImportPreview();
+    elements.bankrollImportStatus.textContent = "Text changed. Preview again before importing.";
+  }
 });
 
 elements.previewBankrollImport.addEventListener("click", async () => {
@@ -7264,14 +7530,9 @@ elements.previewBankrollImport.addEventListener("click", async () => {
 
   try {
     elements.bankrollImportStatus.textContent = "Building preview...";
-    const payload = await api("/api/bankroll/imports/preview", {
-      method: "POST",
-      body: {
-        rawText,
-        source: "bankroll-csv"
-      }
-    });
+    const payload = await previewBankrollImportText(rawText);
     state.bankrollImportPreview = payload;
+    state.bankrollImportPreviewKey = textFingerprint(rawText);
     renderBankrollImportPreview(payload);
     elements.bankrollImportStatus.textContent = bankrollPreviewSummary(payload);
   } catch (error) {
@@ -7283,19 +7544,36 @@ elements.previewBankrollImport.addEventListener("click", async () => {
 elements.bankrollImportForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
+  const rawText = String(form.get("rawText") ?? "");
+  const previewKey = textFingerprint(rawText);
 
   try {
+    if (!state.bankrollImportPreview || state.bankrollImportPreviewKey !== previewKey) {
+      elements.bankrollImportStatus.textContent = "Building preview...";
+      const preview = await previewBankrollImportText(rawText);
+      state.bankrollImportPreview = preview;
+      state.bankrollImportPreviewKey = previewKey;
+      renderBankrollImportPreview(preview);
+      elements.bankrollImportStatus.textContent = `${bankrollPreviewSummary(preview)}. Review the preview, then click Import Sessions again.`;
+      showToast("Preview ready. Review it before importing.");
+      return;
+    }
+
     elements.bankrollImportStatus.textContent = "Importing sessions...";
     const payload = await api("/api/bankroll/imports", {
       method: "POST",
       body: {
-        rawText: form.get("rawText"),
-        source: "bankroll-csv"
+        rawText,
+        source: "bankroll-csv",
+        bankrollName: state.settings.bankrollName,
+        defaultLocation: state.settings.defaultLocation,
+        defaultStakes: state.settings.defaultStakes
       }
     });
     state.selectedSessionId = payload.sessions?.[0]?.id ?? state.selectedSessionId;
     state.sessionDetailFilters = { ...emptySessionDetailFilters };
     state.bankrollImportPreview = payload;
+    state.bankrollImportPreviewKey = previewKey;
     await refresh();
     renderBankrollImportPreview(payload);
     elements.bankrollImportStatus.textContent = bankrollImportSummary(payload);
@@ -7391,6 +7669,7 @@ elements.bankrollForm.addEventListener("submit", async (event) => {
           date: form.get("date"),
           location: form.get("location"),
           gameType: form.get("gameType"),
+          bankrollName: form.get("bankrollName"),
           stakes: form.get("stakes"),
           tableSize: form.get("tableSize"),
           hours: form.get("hours"),
@@ -7524,6 +7803,34 @@ elements.exportSessionsCsv.addEventListener("click", exportSessionsCsv);
 elements.exportTransactionsCsv.addEventListener("click", exportTransactionsCsv);
 elements.exportWorkspaceJson.addEventListener("click", () => {
   exportWorkspaceJson().catch((error) => showToast(error.message));
+});
+
+elements.settingsForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  state.settings = normalizeAppSettings(settingsFormValues());
+  writeAppSettings(state.settings);
+  state.bankrollImportPreview = null;
+  state.bankrollImportPreviewKey = "";
+
+  if (!elements.bankrollForm.dataset.editingSessionId) {
+    resetBankrollForm();
+  }
+  if (!elements.transactionForm.dataset.editingTransactionId) {
+    resetTransactionForm();
+  }
+  render();
+  showToast("Settings saved.");
+});
+
+elements.settingsReset.addEventListener("click", () => {
+  state.settings = { ...defaultSettings };
+  writeAppSettings(state.settings);
+  state.bankrollImportPreview = null;
+  state.bankrollImportPreviewKey = "";
+  resetBankrollForm();
+  resetTransactionForm();
+  render();
+  showToast("Settings reset to defaults.");
 });
 
 elements.sessionDetail.addEventListener("click", (event) => {
@@ -7731,10 +8038,13 @@ elements.signOut.addEventListener("click", () => {
 
 async function boot() {
   if (elements.bankrollForm?.elements.date) {
-    elements.bankrollForm.elements.date.value = new Date().toISOString().slice(0, 10);
+    resetBankrollForm();
   }
   if (elements.transactionForm?.elements.date) {
     resetTransactionForm();
+  }
+  if (elements.liveStakes && elements.liveStakes.value === "$1/$3") {
+    elements.liveStakes.value = state.settings.defaultStakes;
   }
 
   try {

@@ -125,6 +125,7 @@
           <button class="nav-button" data-view="live">Live Hand</button>
           <button class="nav-button" data-view="equity">Equity</button>
           <button class="nav-button" data-view="imports">Imports</button>
+          <button class="nav-button" data-view="settings">Settings</button>
         </nav>
 
         <div class="felt-panel">
@@ -556,6 +557,10 @@
                       </select>
                     </label>
                     <label>
+                      Bankroll
+                      <input name="bankrollName" value="Default" autocomplete="off">
+                    </label>
+                    <label>
                       Stakes
                       <input name="stakes" value="$0.05/$0.10" autocomplete="off">
                     </label>
@@ -698,6 +703,76 @@
               <div id="session-summary" class="session-summary"></div>
               <div id="session-list" class="session-list"></div>
               <div id="session-detail" class="session-detail"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="view-settings">
+          <div class="split settings-workspace">
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Data Center</p>
+                  <h3>Workspace Control</h3>
+                  <p class="panel-note">Check save mode, sync status, backup habits, and record counts.</p>
+                </div>
+                <div class="session-export-actions">
+                  <button class="button secondary" type="button" data-refresh-workspace>Sync Now</button>
+                  <button class="button secondary" type="button" data-export-workspace-json>Backup JSON</button>
+                </div>
+              </div>
+              <div id="settings-data-center" class="data-center-grid"></div>
+              <div id="settings-summary" class="settings-summary"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Preferences</p>
+                  <h3>Defaults</h3>
+                  <p class="panel-note">These values prefill new sessions, bankroll imports, and money display.</p>
+                </div>
+              </div>
+              <form id="settings-form" class="form settings-form">
+                <div class="form-grid">
+                  <label>
+                    Currency
+                    <select name="currency"></select>
+                  </label>
+                  <label>
+                    Bankroll name
+                    <input name="bankrollName" autocomplete="off">
+                  </label>
+                  <label>
+                    Default location
+                    <input name="defaultLocation" autocomplete="off">
+                  </label>
+                  <label>
+                    Default stakes
+                    <input name="defaultStakes" autocomplete="off">
+                  </label>
+                  <label>
+                    Default game
+                    <select name="defaultGameType"></select>
+                  </label>
+                  <label>
+                    Default table size
+                    <input name="defaultTableSize" inputmode="numeric">
+                  </label>
+                  <label>
+                    Default big blind
+                    <input name="defaultBigBlind" inputmode="decimal">
+                  </label>
+                  <label>
+                    Graph focus
+                    <select name="graphMetric"></select>
+                  </label>
+                </div>
+                <div class="form-actions">
+                  <button class="button" type="submit">Save Settings</button>
+                  <button id="settings-reset" class="button secondary" type="button">Reset Defaults</button>
+                </div>
+              </form>
             </section>
           </div>
         </section>
