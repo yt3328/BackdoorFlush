@@ -4,7 +4,12 @@ import { mkdirSync } from "node:fs";
 import { buildDecisionBreakdown, buildStudyPlan, normalizeDecisionReviewPatch } from "../core/decisionReview.js";
 import { buildReviewQueue, normalizeReviewPatch } from "../core/handReview.js";
 import { handKey, hashText } from "../core/importIdentity.js";
-import { parseBankrollImport, planBankrollImport } from "../core/bankrollImport.js";
+import {
+  hasPreparedBankrollRows,
+  parseBankrollImport,
+  planBankrollImport,
+  planPreparedBankrollImport
+} from "../core/bankrollImport.js";
 import { buildBankrollTransaction, summarizeBankrollTransactions } from "../core/bankrollTransactions.js";
 import { buildLiveHand } from "../core/liveHandBuilder.js";
 import { buildSessionDetail } from "../core/sessionInsights.js";
@@ -317,6 +322,10 @@ export class HandStore {
   }
 
   parseBankrollImportPlan(payload = {}) {
+    if (hasPreparedBankrollRows(payload)) {
+      return this.preparedBankrollImportPlan(payload);
+    }
+
     const rawText = payload.rawText ?? payload.text ?? "";
     if (!String(rawText).trim()) {
       throw new Error("Paste or upload a bankroll export first.");
@@ -332,6 +341,16 @@ export class HandStore {
     const existingTransactionKeys = new Set(this.state.bankrollTransactions.map(bankrollTransactionKey).filter(Boolean));
 
     return planBankrollImport(parsed, {
+      existingSessionKeys: existingKeys,
+      existingTransactionKeys
+    });
+  }
+
+  preparedBankrollImportPlan(payload = {}) {
+    const existingKeys = new Set(this.state.bankrollSessions.map(bankrollSessionKey).filter(Boolean));
+    const existingTransactionKeys = new Set(this.state.bankrollTransactions.map(bankrollTransactionKey).filter(Boolean));
+
+    return planPreparedBankrollImport(payload, {
       existingSessionKeys: existingKeys,
       existingTransactionKeys
     });
@@ -391,6 +410,7 @@ export class HandStore {
       duplicateCount: plan.duplicateCount,
       duplicateSessionCount: plan.duplicateSessionCount,
       duplicateTransactionCount: plan.duplicateTransactionCount,
+      uncheckedCount: plan.uncheckedCount ?? 0,
       parsedRowCount: plan.parsedRowCount,
       source: plan.source,
       sessions,
@@ -506,6 +526,7 @@ export class HandStore {
     }
 
     const existingSessionId = existingSession.sessionId ?? existingSession.id;
+    const unlinkedImports = this.state.imports.filter((record) => record.sessionId === existingSessionId);
 
     this.state.bankrollSessions = this.state.bankrollSessions.filter(
       (session) => session.id !== id && session.sessionId !== id
@@ -523,7 +544,8 @@ export class HandStore {
     this.save();
 
     return {
-      session: existingSession
+      session: existingSession,
+      unlinkedImports
     };
   }
 
@@ -599,14 +621,15 @@ export class HandStore {
       throw new Error("Import not found.");
     }
 
-    const beforeCount = this.state.hands.length;
+    const removedHands = this.state.hands.filter((hand) => hand.importId === id);
     this.state.imports = this.state.imports.filter((record) => record.id !== id);
     this.state.hands = this.state.hands.filter((hand) => hand.importId !== id);
     this.save();
 
     return {
       import: existingImport,
-      removedHands: beforeCount - this.state.hands.length
+      removedHands: removedHands.length,
+      hands: removedHands
     };
   }
 

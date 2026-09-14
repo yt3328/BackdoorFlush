@@ -326,6 +326,57 @@ Cash Games
   assert.equal(duplicatePayload.duplicateCount, 4);
 });
 
+test("bankroll import endpoint saves reviewed and edited preview rows", async () => {
+  const rawText = `"Date","Location","Stakes","Hours","Profit","Note"
+"2026-08-01","Room A","$1/$2","4.5","120","first"
+"2026-08-02","Room B","$1/$2","3.0","-80","second"`;
+  const previewResponse = await dispatch({
+    method: "POST",
+    url: "/api/bankroll/imports/preview",
+    body: {
+      rawText,
+      source: "reviewed-csv"
+    }
+  });
+  const previewPayload = await previewResponse.json();
+  const [first, second] = previewPayload.sessions;
+  const importResponse = await dispatch({
+    method: "POST",
+    url: "/api/bankroll/imports",
+    body: {
+      source: "reviewed-csv",
+      parsedRowCount: previewPayload.parsedRowCount,
+      sessions: [
+        {
+          ...first,
+          location: "Edited Room",
+          stakes: "$2/$5",
+          profit: "250",
+          selected: true
+        },
+        {
+          ...second,
+          selected: false
+        }
+      ],
+      transactions: []
+    }
+  });
+  const importPayload = await importResponse.json();
+  const sessionsResponse = await dispatch({ url: "/api/bankroll/sessions" });
+  const sessionsPayload = await sessionsResponse.json();
+
+  assert.equal(previewResponse.status, 200);
+  assert.equal(previewPayload.readySessionCount, 2);
+  assert.equal(importResponse.status, 201);
+  assert.equal(importPayload.importedSessionCount, 1);
+  assert.equal(importPayload.uncheckedCount, 1);
+  assert.equal(importPayload.sessions[0].location, "Edited Room");
+  assert.equal(importPayload.sessions[0].stakes, "$2/$5");
+  assert.equal(importPayload.sessions[0].profit, 250);
+  assert.equal(sessionsPayload.sessions.length, 1);
+});
+
 test("bankroll transaction endpoints create, update, summarize, and delete ledger entries", async () => {
   const createResponse = await dispatch({
     method: "POST",

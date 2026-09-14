@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { buildDecisionBreakdown, buildStudyPlan, normalizeDecisionReviewPatch } from "../core/decisionReview.js";
 import { buildReviewQueue, normalizeReviewPatch } from "../core/handReview.js";
 import { handKey, hashText } from "../core/importIdentity.js";
-import { parseBankrollImport, planBankrollImport } from "../core/bankrollImport.js";
+import {
+  hasPreparedBankrollRows,
+  parseBankrollImport,
+  planBankrollImport,
+  planPreparedBankrollImport
+} from "../core/bankrollImport.js";
 import { buildBankrollTransaction, summarizeBankrollTransactions } from "../core/bankrollTransactions.js";
 import { buildLiveHand } from "../core/liveHandBuilder.js";
 import { buildSessionDetail } from "../core/sessionInsights.js";
@@ -742,6 +747,10 @@ export class CloudHandStore {
   }
 
   async parseBankrollImportPlan(payload = {}) {
+    if (hasPreparedBankrollRows(payload)) {
+      return this.preparedBankrollImportPlan(payload);
+    }
+
     const rawText = payload.rawText ?? payload.text ?? "";
     if (!String(rawText).trim()) {
       throw new Error("Paste or upload a bankroll export first.");
@@ -761,6 +770,20 @@ export class CloudHandStore {
     const existingTransactionKeys = new Set(existingTransactions.map(bankrollTransactionKey).filter(Boolean));
 
     return planBankrollImport(parsed, {
+      existingSessionKeys: existingKeys,
+      existingTransactionKeys
+    });
+  }
+
+  async preparedBankrollImportPlan(payload = {}) {
+    const [existingSessions, existingTransactions] = await Promise.all([
+      this.listBankrollSessions(),
+      this.listBankrollTransactions()
+    ]);
+    const existingKeys = new Set(existingSessions.map(bankrollSessionKey).filter(Boolean));
+    const existingTransactionKeys = new Set(existingTransactions.map(bankrollTransactionKey).filter(Boolean));
+
+    return planPreparedBankrollImport(payload, {
       existingSessionKeys: existingKeys,
       existingTransactionKeys
     });
@@ -842,6 +865,7 @@ export class CloudHandStore {
       duplicateCount: plan.duplicateCount,
       duplicateSessionCount: plan.duplicateSessionCount,
       duplicateTransactionCount: plan.duplicateTransactionCount,
+      uncheckedCount: plan.uncheckedCount ?? 0,
       parsedRowCount: plan.parsedRowCount,
       source: plan.source,
       sessions: storedSessions.map(publicBankrollSession),
@@ -1034,12 +1058,14 @@ export class CloudHandStore {
     }));
 
     const imports = await this.listImports();
-    for (const record of imports.filter((item) => item.sessionId === sessionId)) {
+    const unlinkedImports = imports.filter((item) => item.sessionId === sessionId);
+    for (const record of unlinkedImports) {
       await this.updateImportSession(record.importId, null);
     }
 
     return {
-      session: existingSession
+      session: existingSession,
+      unlinkedImports
     };
   }
 
@@ -1187,7 +1213,8 @@ export class CloudHandStore {
 
     return {
       import: existingImport,
-      removedHands: hands.length
+      removedHands: hands.length,
+      hands
     };
   }
 

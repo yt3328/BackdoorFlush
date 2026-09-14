@@ -2511,6 +2511,98 @@ button.tag-chip.active,
   line-height: 1.45;
 }
 
+.import-review-section,
+.import-review-issues {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.compact-head {
+  align-items: start;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+.compact-head h4,
+.compact-head p,
+.import-review-issues h4,
+.import-review-issues p {
+  margin: 0;
+}
+
+.import-review-table-wrap {
+  overflow-x: auto;
+}
+
+.import-review-table {
+  min-width: 760px;
+}
+
+.import-review-table th,
+.import-review-table td {
+  vertical-align: top;
+}
+
+.import-review-table td:first-child {
+  width: 44px;
+}
+
+.import-review-table input,
+.import-review-table select {
+  width: 100%;
+  min-width: 88px;
+}
+
+.import-review-table [type="checkbox"] {
+  width: auto;
+  min-width: 0;
+  transform: translateY(3px);
+}
+
+.import-review-table small,
+.import-review-issues small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.import-review-issues p {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.session-form.editing {
+  border: 1px solid rgba(183, 135, 52, 0.32);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(255, 252, 242, 0.9), rgba(250, 246, 235, 0.72));
+  padding: 12px;
+}
+
+.session-form.editing::before {
+  content: "Editing session";
+  display: block;
+  margin-bottom: 10px;
+  color: #75591f;
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.session-form.editing.dirty::before {
+  content: "Editing session - unsaved changes";
+}
+
 .linked-hand {
   width: 100%;
   display: flex;
@@ -3006,6 +3098,24 @@ button.tag-chip.active,
   transform: translateY(0);
 }
 
+.toast.actionable {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  pointer-events: auto;
+}
+
+.toast button {
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  padding: 7px 10px;
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
 .empty {
   color: var(--muted);
   padding: 16px;
@@ -3431,7 +3541,9 @@ textarea:focus-visible {
 .preview-card,
 .audit-list p,
 .import-preview-grid div,
-.preview-lists > div {
+.preview-lists > div,
+.import-review-section,
+.import-review-issues {
   border-color: rgba(33, 41, 35, 0.12);
   background: linear-gradient(180deg, #fffefb, #f6f4eb);
   box-shadow: var(--shadow-soft);

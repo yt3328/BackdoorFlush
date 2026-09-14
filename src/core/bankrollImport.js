@@ -22,6 +22,10 @@ function cleanText(value) {
   return String(value ?? "").trim();
 }
 
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function isBlankRow(row) {
   return row.every((cell) => cleanText(cell) === "");
 }
@@ -563,6 +567,109 @@ export function planBankrollImport(parsed, {
     duplicateCount: duplicateRows.length,
     duplicateSessionCount,
     duplicateTransactionCount,
+    uncheckedCount: 0,
+    skippedCount: skippedRows.length,
+    sessions,
+    transactions,
+    skippedRows: skippedRows.slice(0, 50)
+  };
+}
+
+function selectedForImport(record = {}) {
+  return record.selected !== false && record.importSelected !== false;
+}
+
+function preparedRowNumber(record, index) {
+  const rowNumber = Number.parseInt(record?.importRowNumber ?? record?.rowNumber ?? index + 1, 10);
+  return Number.isFinite(rowNumber) ? rowNumber : index + 1;
+}
+
+export function hasPreparedBankrollRows(payload = {}) {
+  return Array.isArray(payload.sessions) || Array.isArray(payload.transactions);
+}
+
+export function planPreparedBankrollImport(payload = {}, {
+  existingSessionKeys = new Set(),
+  existingTransactionKeys = new Set()
+} = {}) {
+  const incomingSessions = asArray(payload.sessions).map((session, index) => ({
+    ...session,
+    importRowNumber: preparedRowNumber(session, index)
+  }));
+  const incomingTransactions = asArray(payload.transactions).map((transaction, index) => ({
+    ...transaction,
+    importRowNumber: preparedRowNumber(transaction, index)
+  }));
+  const uncheckedRows = [];
+  const duplicateRows = [];
+  const sessions = [];
+  const transactions = [];
+  let duplicateSessionCount = 0;
+  let duplicateTransactionCount = 0;
+
+  for (const session of incomingSessions) {
+    if (!selectedForImport(session)) {
+      uncheckedRows.push({
+        rowNumber: session.importRowNumber,
+        section: "poker-session",
+        reason: "Unchecked in review."
+      });
+      continue;
+    }
+
+    if (session.externalKey && existingSessionKeys.has(session.externalKey)) {
+      duplicateSessionCount += 1;
+      duplicateRows.push({
+        rowNumber: session.importRowNumber,
+        section: "poker-session",
+        reason: "Session was already imported."
+      });
+      continue;
+    }
+
+    sessions.push(session);
+  }
+
+  for (const transaction of incomingTransactions) {
+    if (!selectedForImport(transaction)) {
+      uncheckedRows.push({
+        rowNumber: transaction.importRowNumber,
+        section: "transactions",
+        reason: "Unchecked in review."
+      });
+      continue;
+    }
+
+    if (transaction.externalKey && existingTransactionKeys.has(transaction.externalKey)) {
+      duplicateTransactionCount += 1;
+      duplicateRows.push({
+        rowNumber: transaction.importRowNumber,
+        section: "transactions",
+        reason: "Transaction was already imported."
+      });
+      continue;
+    }
+
+    transactions.push(transaction);
+  }
+
+  const skippedRows = [
+    ...asArray(payload.skippedRows),
+    ...duplicateRows,
+    ...uncheckedRows
+  ];
+
+  return {
+    source: cleanText(payload.source) || "bankroll-review",
+    parsedRowCount: Number(payload.parsedRowCount) || incomingSessions.length + incomingTransactions.length,
+    parsedSessionCount: incomingSessions.length,
+    parsedTransactionCount: incomingTransactions.length,
+    readySessionCount: sessions.length,
+    readyTransactionCount: transactions.length,
+    duplicateCount: duplicateRows.length,
+    duplicateSessionCount,
+    duplicateTransactionCount,
+    uncheckedCount: uncheckedRows.length,
     skippedCount: skippedRows.length,
     sessions,
     transactions,

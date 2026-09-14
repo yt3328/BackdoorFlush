@@ -4,7 +4,7 @@ Backdoor Flush is a small hand-history desk for reviewing poker sessions.
 
 The local app lets you upload, paste, or load hand-history text, parse it into hands, look at player tendencies, flag a few review spots, replay individual hands, track bankroll sessions, and run quick equity checks.
 
-Version 2.7 adds a Settings/Data Center view, user defaults for bankroll tracking, preview-first session imports, currency-aware money display, and clearer sync/backup confidence signals.
+Version 2.8 adds editable bankroll-import review tables, row-level import selection, safer delete undo, and clearer session editing state.
 
 ## Run it
 
@@ -28,12 +28,15 @@ Local mode:
 - Imports PokerStars-style text hand histories from a file picker or pasted text.
 - Skips duplicate uploads and overlapping hands.
 - Stores parsed hands in a local JSON store.
-- Deletes individual imports or clears the local session.
+- Deletes individual imports or clears the local session, with undo for deleted imports when the removed hand records are available.
 - Shows VPIP, PFR, 3-bet rate, aggression factor, captured hero-position coverage, and compact charts.
 - Tracks poker sessions with location, stakes, hours, buy-ins, cash-outs, results, hourly rate, and bb/hr.
 - Imports previous cash-game and tournament session exports into the bankroll tracker.
-- Previews bankroll exports before import, including new sessions, ledger transactions, duplicates, skipped rows, and applied defaults.
+- Previews bankroll exports before import, including editable new sessions, ledger transactions, duplicates, skipped rows, and applied defaults.
+- Lets users uncheck preview rows and edit session location, stakes, hours, result, and bankroll before saving.
 - Requires a fresh preview before saving changed session-import text.
+- Offers undo after deleting sessions or bankroll transactions.
+- Shows an editing and unsaved-changes state while modifying an existing session.
 - Tracks bankroll transactions separately from poker-session results.
 - Shows bankroll progress, location-level session charts, and common Home periods such as 7D, 30D, 90D, YTD, and All.
 - Keeps Home and Sessions filters synchronized across date range, location, game type, stakes, and linked-hand review status.

@@ -1,6 +1,6 @@
 import { createAuthClient } from "./auth.js";
 
-const appVersion = "2.7.0";
+const appVersion = "2.8.0";
 const shareHashPrefix = "#review-share=";
 const positionOrder = ["BTN", "CO", "HJ", "LJ", "MP", "UTG+1", "UTG", "STR", "SB", "BB", "Unknown"];
 const streetOrder = ["hole-cards", "flop", "turn", "river", "show-down"];
@@ -242,7 +242,9 @@ const state = {
   demoMode: false,
   lastSyncedAt: null,
   lastSavedAt: null,
-  lastSaveMessage: ""
+  lastSaveMessage: "",
+  toastTimer: null,
+  toastAction: null
 };
 
 const apiBase = window.POKER_FELT_SCOPE_API_BASE ?? "";
@@ -702,10 +704,25 @@ function syncImportPolling() {
   }, 2500);
 }
 
-function showToast(message) {
-  elements.toast.textContent = message;
+function showToast(message, { actionLabel = "", action = null, duration = 3200 } = {}) {
+  if (state.toastTimer) {
+    window.clearTimeout(state.toastTimer);
+    state.toastTimer = null;
+  }
+
+  state.toastAction = typeof action === "function" ? action : null;
+  elements.toast.innerHTML = `
+    <span>${escapeHtml(message)}</span>
+    ${state.toastAction && actionLabel ? `<button type="button" data-toast-action>${escapeHtml(actionLabel)}</button>` : ""}
+  `;
+  elements.toast.classList.toggle("actionable", Boolean(state.toastAction));
   elements.toast.classList.add("show");
-  window.setTimeout(() => elements.toast.classList.remove("show"), 2600);
+  state.toastTimer = window.setTimeout(() => {
+    elements.toast.classList.remove("show");
+    elements.toast.classList.remove("actionable");
+    state.toastAction = null;
+    state.toastTimer = null;
+  }, duration);
 }
 
 function escapeHtml(value) {
@@ -2420,6 +2437,65 @@ async function workspaceBackupPayload() {
     ...payload,
     settings: { ...state.settings }
   };
+}
+
+function workspaceRestorePayload(records) {
+  return {
+    app: "Backdoor Flush",
+    schemaVersion: appVersion,
+    exportedAt: new Date().toISOString(),
+    mode: workspaceModeMeta().mode,
+    imports: records.imports ?? [],
+    hands: records.hands ?? [],
+    bankrollSessions: records.bankrollSessions ?? [],
+    bankrollTransactions: records.bankrollTransactions ?? []
+  };
+}
+
+async function restoreDeletedSession(payload) {
+  const restoredSessionId = sessionId(payload.session);
+  await api("/api/restore/workspace", {
+    method: "POST",
+    body: workspaceRestorePayload({
+      bankrollSessions: [payload.session]
+    })
+  });
+
+  for (const record of payload.unlinkedImports ?? []) {
+    await api(`/api/imports/${encodeURIComponent(record.importId ?? record.id)}`, {
+      method: "PATCH",
+      body: {
+        sessionId: restoredSessionId
+      }
+    });
+  }
+
+  state.selectedSessionId = restoredSessionId;
+  await refresh();
+  showToast(markWorkspaceSaved("Session restored"));
+}
+
+async function restoreDeletedTransaction(payload) {
+  await api("/api/restore/workspace", {
+    method: "POST",
+    body: workspaceRestorePayload({
+      bankrollTransactions: [payload.transaction]
+    })
+  });
+  await refresh();
+  showToast(markWorkspaceSaved("Transaction restored"));
+}
+
+async function restoreDeletedImport(payload) {
+  await api("/api/restore/workspace", {
+    method: "POST",
+    body: workspaceRestorePayload({
+      imports: [payload.import],
+      hands: payload.hands ?? []
+    })
+  });
+  await refresh();
+  showToast(markWorkspaceSaved(`Restored ${payload.removedHands ?? payload.hands?.length ?? 0} hands`));
 }
 
 function exportSessionsCsv() {
@@ -5013,6 +5089,148 @@ function renderSessionSummary() {
   `;
 }
 
+function importReviewValue(value, fallback = "") {
+  return value === null || value === undefined || value === "" ? fallback : value;
+}
+
+function importReviewCell(record, field, { type = "text", fallback = "", step = "" } = {}) {
+  return `
+    <input
+      data-import-field="${escapeHtml(field)}"
+      type="${escapeHtml(type)}"
+      value="${escapeHtml(importReviewValue(record[field], fallback))}"
+      ${step ? `step="${escapeHtml(step)}"` : ""}
+    >
+  `;
+}
+
+function renderTransactionTypeSelect(transaction) {
+  const current = transaction.type ?? "adjustment";
+  const types = ["deposit", "withdrawal", "transfer", "initial", "adjustment"];
+
+  return `
+    <select data-import-field="type">
+      ${types.map((type) => `<option value="${escapeHtml(type)}" ${selectedOption(current, type)}>${escapeHtml(transactionTypeLabel(type))}</option>`).join("")}
+    </select>
+  `;
+}
+
+function renderImportSkippedRows(skippedRows) {
+  if (!skippedRows.length) {
+    return "";
+  }
+
+  const groups = skippedRows.reduce((map, row) => {
+    const reason = row.reason || "Skipped row";
+    const group = map.get(reason) ?? {
+      reason,
+      rows: []
+    };
+    group.rows.push(row.rowNumber);
+    map.set(reason, group);
+    return map;
+  }, new Map());
+
+  return `
+    <div class="import-review-issues">
+      <h4>Rows not ready</h4>
+      ${[...groups.values()].map((group) => `
+        <p>
+          <span class="status failed">${escapeHtml(group.rows.length)}</span>
+          ${escapeHtml(group.reason)}
+          <small>Rows ${escapeHtml(group.rows.slice(0, 8).join(", "))}${group.rows.length > 8 ? "..." : ""}</small>
+        </p>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderImportReviewTables(sessions, transactions) {
+  const sessionRows = sessions.length
+    ? `
+      <div class="import-review-table-wrap">
+        <table class="import-review-table">
+          <thead>
+            <tr>
+              <th>Use</th>
+              <th>Status</th>
+              <th>Date</th>
+              <th>Location</th>
+              <th>Stakes</th>
+              <th>Hours</th>
+              <th>Result</th>
+              <th>Bankroll</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${sessions.map((session, index) => `
+              <tr data-import-review-session="${index}">
+                <td><input data-import-field="selected" type="checkbox" checked aria-label="Import session row ${escapeHtml(session.importRowNumber ?? index + 1)}"></td>
+                <td><span class="status ready">Ready</span><small>Row ${escapeHtml(session.importRowNumber ?? index + 1)}</small></td>
+                <td>${importReviewCell(session, "date", { type: "date" })}</td>
+                <td>${importReviewCell(session, "location", { fallback: state.settings.defaultLocation })}</td>
+                <td>${importReviewCell(session, "stakes", { fallback: state.settings.defaultStakes })}</td>
+                <td>${importReviewCell(session, "hours", { type: "number", step: "0.1" })}</td>
+                <td>${importReviewCell(session, "profit", { type: "number", step: "0.01" })}</td>
+                <td>${importReviewCell(session, "bankrollName", { fallback: state.settings.bankrollName })}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `
+    : '<p class="muted-line">No new sessions found.</p>';
+  const transactionRows = transactions.length
+    ? `
+      <div class="import-review-table-wrap">
+        <table class="import-review-table">
+          <thead>
+            <tr>
+              <th>Use</th>
+              <th>Status</th>
+              <th>Date</th>
+              <th>Type</th>
+              <th>Amount</th>
+              <th>Bankroll</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${transactions.map((transaction, index) => `
+              <tr data-import-review-transaction="${index}">
+                <td><input data-import-field="selected" type="checkbox" checked aria-label="Import transaction row ${escapeHtml(transaction.importRowNumber ?? index + 1)}"></td>
+                <td><span class="status ready">Ready</span><small>Row ${escapeHtml(transaction.importRowNumber ?? index + 1)}</small></td>
+                <td>${importReviewCell(transaction, "date", { type: "date" })}</td>
+                <td>${renderTransactionTypeSelect(transaction)}</td>
+                <td>${importReviewCell(transaction, "amount", { type: "number", step: "0.01" })}</td>
+                <td>${importReviewCell(transaction, "bankrollName", { fallback: state.settings.bankrollName })}</td>
+                <td>${importReviewCell(transaction, "note")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `
+    : '<p class="muted-line">No new transactions found.</p>';
+
+  return `
+    <div class="import-review-section">
+      <div class="panel-head compact-head">
+        <h4>Session Rows</h4>
+        <p class="panel-note">Edit location, stakes, hours, result, or bankroll before saving.</p>
+      </div>
+      ${sessionRows}
+    </div>
+    <div class="import-review-section">
+      <div class="panel-head compact-head">
+        <h4>Transaction Rows</h4>
+        <p class="panel-note">Uncheck ledger rows that should stay out of this workspace.</p>
+      </div>
+      ${transactionRows}
+    </div>
+  `;
+}
+
 function renderBankrollImportPreview(payload = state.bankrollImportPreview) {
   if (!payload) {
     elements.bankrollImportPreview.innerHTML = "";
@@ -5026,12 +5244,13 @@ function renderBankrollImportPreview(payload = state.bankrollImportPreview) {
   const readyTransactions = payload.readyTransactionCount ?? transactions.length;
   const duplicateCount = payload.duplicateCount ?? 0;
   const skippedCount = payload.skippedCount ?? 0;
+  const uncheckedCount = payload.uncheckedCount ?? 0;
 
   elements.bankrollImportPreview.innerHTML = `
     <div class="import-confidence">
       <div>
         <strong>Review before saving</strong>
-        <p>${readySessions + readyTransactions} record${readySessions + readyTransactions === 1 ? "" : "s"} ready. Duplicates and skipped rows will not be added.</p>
+        <p>${readySessions + readyTransactions} record${readySessions + readyTransactions === 1 ? "" : "s"} ready. Edit fields or uncheck rows before import.</p>
       </div>
       <span>${escapeHtml(state.settings.bankrollName)} / ${escapeHtml(state.settings.defaultLocation)} / ${escapeHtml(state.settings.defaultStakes)}</span>
     </div>
@@ -5052,37 +5271,13 @@ function renderBankrollImportPreview(payload = state.bankrollImportPreview) {
         <span class="subtle">Skipped rows</span>
         <strong>${skippedCount}</strong>
       </div>
-    </div>
-    <div class="preview-lists">
       <div>
-        <h4>Sessions</h4>
-        ${
-          sessions.length
-            ? sessions.slice(0, 4).map((session) => `
-                <p>${escapeHtml(formatDate(session.date))} / ${escapeHtml(session.location)} / ${formatCurrency(session.profit, { signed: true })}</p>
-              `).join("")
-            : '<p class="muted-line">No new sessions found.</p>'
-        }
+        <span class="subtle">Unchecked</span>
+        <strong>${uncheckedCount}</strong>
       </div>
-      <div>
-        <h4>Transactions</h4>
-        ${
-          transactions.length
-            ? transactions.slice(0, 4).map((transaction) => `
-                <p>${escapeHtml(formatDate(transaction.date))} / ${escapeHtml(transactionTypeLabel(transaction.type))} / ${formatCurrency(transaction.amount, { signed: true })}</p>
-              `).join("")
-            : '<p class="muted-line">No new transactions found.</p>'
-        }
-      </div>
-      ${
-        skippedRows.length
-          ? `<div>
-              <h4>Skipped</h4>
-              ${skippedRows.slice(0, 3).map((row) => `<p>Row ${escapeHtml(row.rowNumber)} / ${escapeHtml(row.reason)}</p>`).join("")}
-            </div>`
-          : ""
-      }
     </div>
+    ${renderImportReviewTables(sessions, transactions)}
+    ${renderImportSkippedRows(skippedRows)}
   `;
 }
 
@@ -5236,6 +5431,7 @@ function renderTransactions() {
 
 function resetBankrollForm() {
   elements.bankrollForm.reset();
+  elements.bankrollForm.classList.remove("editing", "dirty");
   elements.bankrollForm.elements.date.value = new Date().toISOString().slice(0, 10);
   elements.bankrollForm.elements.location.value = state.settings.defaultLocation;
   elements.bankrollForm.elements.gameType.value = state.settings.defaultGameType;
@@ -5276,6 +5472,8 @@ function fillTransactionForm(transaction) {
 }
 
 function fillBankrollForm(session) {
+  elements.bankrollForm.classList.add("editing");
+  elements.bankrollForm.classList.remove("dirty");
   elements.bankrollForm.elements.date.value = session.date ?? "";
   elements.bankrollForm.elements.location.value = session.location ?? "";
   elements.bankrollForm.elements.gameType.value = session.gameType ?? "cash";
@@ -6687,7 +6885,8 @@ function countLabel(count, label) {
 
 function bankrollImportSummary(payload) {
   const duplicateCount = payload.duplicateCount ?? 0;
-  const skippedCount = Math.max(0, (payload.skippedCount ?? 0) - duplicateCount);
+  const uncheckedCount = payload.uncheckedCount ?? 0;
+  const skippedCount = Math.max(0, (payload.skippedCount ?? 0) - duplicateCount - uncheckedCount);
   const importedSessions = payload.importedSessionCount ?? payload.importedCount ?? payload.readySessionCount ?? 0;
   const importedTransactions = payload.importedTransactionCount ?? payload.readyTransactionCount ?? 0;
   const parts = [countLabel(importedSessions, "session") + " imported"];
@@ -6698,6 +6897,10 @@ function bankrollImportSummary(payload) {
 
   if (duplicateCount > 0) {
     parts.push(countLabel(duplicateCount, "duplicate") + " skipped");
+  }
+
+  if (uncheckedCount > 0) {
+    parts.push(countLabel(uncheckedCount, "unchecked row") + " skipped");
   }
 
   if (skippedCount > 0) {
@@ -6717,8 +6920,15 @@ function bankrollPreviewSummary(payload) {
     parts.push(countLabel(payload.duplicateCount, "duplicate") + " found");
   }
 
+  if ((payload.uncheckedCount ?? 0) > 0) {
+    parts.push(countLabel(payload.uncheckedCount, "unchecked row") + " skipped");
+  }
+
   if ((payload.skippedCount ?? 0) > 0) {
-    parts.push(countLabel(payload.skippedCount, "row") + " skipped");
+    const technicalSkipped = Math.max(0, payload.skippedCount - (payload.uncheckedCount ?? 0) - (payload.duplicateCount ?? 0));
+    if (technicalSkipped > 0) {
+      parts.push(countLabel(technicalSkipped, "row") + " skipped");
+    }
   }
 
   return parts.join(" / ");
@@ -6735,6 +6945,59 @@ async function previewBankrollImportText(rawText) {
       defaultStakes: state.settings.defaultStakes
     }
   });
+}
+
+function importFieldValue(row, field) {
+  const control = row.querySelector(`[data-import-field="${field}"]`);
+  if (!control) {
+    return "";
+  }
+
+  if (control.type === "checkbox") {
+    return control.checked;
+  }
+
+  return control.value;
+}
+
+function reviewedBankrollImportPayload(rawText) {
+  const preview = state.bankrollImportPreview;
+  const sessionRows = [...elements.bankrollImportPreview.querySelectorAll("[data-import-review-session]")];
+  const transactionRows = [...elements.bankrollImportPreview.querySelectorAll("[data-import-review-transaction]")];
+  const sessions = sessionRows.map((row) => {
+    const base = preview.sessions[Number(row.dataset.importReviewSession)] ?? {};
+    return {
+      ...base,
+      selected: importFieldValue(row, "selected"),
+      date: importFieldValue(row, "date"),
+      location: importFieldValue(row, "location"),
+      stakes: importFieldValue(row, "stakes"),
+      hours: importFieldValue(row, "hours"),
+      profit: importFieldValue(row, "profit"),
+      bankrollName: importFieldValue(row, "bankrollName")
+    };
+  });
+  const transactions = transactionRows.map((row) => {
+    const base = preview.transactions[Number(row.dataset.importReviewTransaction)] ?? {};
+    return {
+      ...base,
+      selected: importFieldValue(row, "selected"),
+      date: importFieldValue(row, "date"),
+      type: importFieldValue(row, "type"),
+      amount: importFieldValue(row, "amount"),
+      bankrollName: importFieldValue(row, "bankrollName"),
+      note: importFieldValue(row, "note")
+    };
+  });
+
+  return {
+    rawText,
+    source: preview.source || "bankroll-csv",
+    parsedRowCount: preview.parsedRowCount,
+    skippedRows: preview.skippedRows ?? [],
+    sessions,
+    transactions
+  };
 }
 
 function workspaceRestoreSummary(payload, verb = "ready") {
@@ -6969,6 +7232,23 @@ document.addEventListener("click", (event) => {
   if (exportWorkspaceTarget) {
     event.preventDefault();
     exportWorkspaceJson().catch((error) => showToast(error.message));
+    return;
+  }
+
+  const toastActionTarget = event.target.closest("[data-toast-action]");
+  if (toastActionTarget) {
+    event.preventDefault();
+    const action = state.toastAction;
+    elements.toast.classList.remove("show");
+    elements.toast.classList.remove("actionable");
+    state.toastAction = null;
+    if (state.toastTimer) {
+      window.clearTimeout(state.toastTimer);
+      state.toastTimer = null;
+    }
+    if (action) {
+      action().catch((error) => showToast(error.message));
+    }
     return;
   }
 
@@ -7432,15 +7712,19 @@ elements.importList.addEventListener("click", async (event) => {
     return;
   }
 
-  try {
-    const payload = await api(`/api/imports/${encodeURIComponent(target.dataset.deleteImport)}`, {
-      method: "DELETE"
-    });
-    await refresh();
-    showToast(markWorkspaceSaved(`Deleted ${payload.removedHands} hands`));
-  } catch (error) {
-    showToast(error.message);
-  }
+    try {
+      const payload = await api(`/api/imports/${encodeURIComponent(target.dataset.deleteImport)}`, {
+        method: "DELETE"
+      });
+      await refresh();
+      showToast(markWorkspaceSaved(`Deleted ${payload.removedHands} hands`), {
+        actionLabel: "Undo",
+        action: () => restoreDeletedImport(payload),
+        duration: 7000
+      });
+    } catch (error) {
+      showToast(error.message);
+    }
 });
 
 elements.importList.addEventListener("change", async (event) => {
@@ -7562,13 +7846,7 @@ elements.bankrollImportForm.addEventListener("submit", async (event) => {
     elements.bankrollImportStatus.textContent = "Importing sessions...";
     const payload = await api("/api/bankroll/imports", {
       method: "POST",
-      body: {
-        rawText,
-        source: "bankroll-csv",
-        bankrollName: state.settings.bankrollName,
-        defaultLocation: state.settings.defaultLocation,
-        defaultStakes: state.settings.defaultStakes
-      }
+      body: reviewedBankrollImportPayload(rawText)
     });
     state.selectedSessionId = payload.sessions?.[0]?.id ?? state.selectedSessionId;
     state.sessionDetailFilters = { ...emptySessionDetailFilters };
@@ -7691,6 +7969,12 @@ elements.bankrollForm.addEventListener("submit", async (event) => {
   }
 });
 
+elements.bankrollForm.addEventListener("input", () => {
+  if (elements.bankrollForm.dataset.editingSessionId) {
+    elements.bankrollForm.classList.add("dirty");
+  }
+});
+
 elements.sessionList.addEventListener("click", async (event) => {
   const deleteTarget = event.target.closest("[data-delete-bankroll-session]");
   if (deleteTarget) {
@@ -7708,7 +7992,11 @@ elements.sessionList.addEventListener("click", async (event) => {
         resetBankrollForm();
       }
       await refresh();
-      showToast(markWorkspaceSaved(`Deleted ${formatCurrency(payload.session.profit, { signed: true })} session`));
+      showToast(markWorkspaceSaved(`Deleted ${formatCurrency(payload.session.profit, { signed: true })} session`), {
+        actionLabel: "Undo",
+        action: () => restoreDeletedSession(payload),
+        duration: 7000
+      });
     } catch (error) {
       showToast(error.message);
     }
@@ -7783,7 +8071,11 @@ elements.transactionList.addEventListener("click", async (event) => {
       });
       await refresh();
       resetTransactionForm();
-      showToast(markWorkspaceSaved(`Deleted ${formatCurrency(payload.transaction.amount, { signed: true })} transaction`));
+      showToast(markWorkspaceSaved(`Deleted ${formatCurrency(payload.transaction.amount, { signed: true })} transaction`), {
+        actionLabel: "Undo",
+        action: () => restoreDeletedTransaction(payload),
+        duration: 7000
+      });
     } catch (error) {
       showToast(error.message);
     }
